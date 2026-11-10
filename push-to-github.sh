@@ -72,6 +72,22 @@ gh auth setup-git --hostname github.com -f >/dev/null 2>&1 ||
   git config --local "credential.https://github.com.helper" '!gh auth git-credential'
 
 git branch -M "$BRANCH"
-git push -u origin "$BRANCH"
+
+# 部分网络环境下 github.com:443 的 HTTP/2 长连接会被中途切断
+# （GnuTLS recv error (-110)）；强制 HTTP/1.1 并最多重试 3 次。
+PUSH_OK=0
+for attempt in 1 2 3; do
+  if git -c http.version=HTTP/1.1 -c http.postBuffer=524288000 \
+      push -u origin "$BRANCH"; then
+    PUSH_OK=1
+    break
+  fi
+  echo "[!] 第 ${attempt} 次推送失败，短暂退避后重试…" >&2
+  sleep 2
+done
+if [[ "$PUSH_OK" -ne 1 ]]; then
+  echo "推送失败：请检查网络后重新运行本脚本（不会重复创建仓库）" >&2
+  exit 1
+fi
 
 echo "[ok] 推送完成: https://github.com/${OWNER}/${REPO}/tree/${BRANCH}"
