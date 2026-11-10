@@ -172,17 +172,26 @@ class _SettingsPageState extends State<SettingsPage> {
                 builder: (_, __) {
                   final h = appState.health;
                   final connected = appState.serviceError.isEmpty && h != null;
+                  final degraded = h?.mockMode == true;
                   return Column(
                     children: <Widget>[
-                      _row('连接状态', connected ? '正常' : '未连接',
-                          valueColor: connected
+                      _row('连接状态',
+                          connected
+                              ? (degraded ? '已降级 · 离线快照' : '已连接 B 站')
+                              : '未连接',
+                          valueColor: connected && !degraded
                               ? const Color(0xFF34B27B)
                               : const Color(0xFFE9A23B)),
+                      _row('连接方式',
+                          ApiConfig.direct
+                              ? '原生直连 B 站公开接口'
+                              : (ApiConfig.offline
+                                  ? '纯离线（不发网络请求）'
+                                  : '同源 BFF 代理')),
                       _row('服务地址', ApiConfig.displayBase),
-                      _row('访客身份',
-                          h?.identity == 'spi' ? '动态获取 (spi)' : (h?.identity ?? '—')),
+                      _row('访客身份', h?.identity ?? '—'),
                       _row('数据模式',
-                          h?.mockMode == true ? '离线快照' : '实时接口 + 自动降级'),
+                          degraded ? '离线快照' : 'B 站实时接口 + 自动降级'),
                       _row('缓存条目', '${h?.cacheEntries ?? 0} 条'),
                       _row('快照日期', h?.snapshotAt ?? '—'),
                       _row('服务版本', 'v${h?.version ?? '1.0.0'}'),

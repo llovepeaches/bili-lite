@@ -51,6 +51,8 @@ class Fmt {
 
   static String sourceLabel(String source) {
     switch (source) {
+      case 'bili':
+        return 'B 站实时';
       case 'live':
         return '实时';
       case 'cache':
@@ -66,6 +68,7 @@ class Fmt {
 
   static Color sourceColor(String source, bool dark) {
     switch (source) {
+      case 'bili':
       case 'live':
         return const Color(0xFF34B27B);
       case 'cache':

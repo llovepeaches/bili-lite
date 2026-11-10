@@ -50,12 +50,14 @@ jobs:
           flutter --version
           flutter config --enable-windows-desktop
 
-      - name: Build Windows release (offline snapshot baked in)
+      - name: Build Windows release (live Bili data + offline fallback)
         working-directory: bili-lite/app
         shell: pwsh
         run: |
           flutter pub get
-          flutter build windows --release --dart-define=OFFLINE=true
+          # 不加 OFFLINE：原生端默认直连 B 站公开接口；
+          # assets/offline.json 仍会打进包里，断网 / 风控时自动降级。
+          flutter build windows --release
           Get-ChildItem "build\windows\runner\Release" | Select-Object Name, Length
 
       - name: Ensure Inno Setup available
@@ -166,7 +168,7 @@ jobs:
         working-directory: bili-lite/app
         run: |
           flutter pub get
-          flutter build ios --release --no-codesign --dart-define=OFFLINE=true
+          flutter build ios --release --no-codesign
           ls -la build/ios/iphoneos/
 
       - name: Pack unsigned IPA

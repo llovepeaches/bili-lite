@@ -13,9 +13,10 @@ class ApiConfig {
 
   static const int defaultPort = 8787;
 
-  /// 独立安装包模式：用 `--dart-define=OFFLINE=1` 打开。
-  /// 此时不发任何网络请求，直接读取 assets/offline.json 里的真实数据快照，
-  /// 封面走原始 https 图床，App 装到真机即可离线使用。
+  /// 纯离线开关：用 `--dart-define=OFFLINE=1` 打开。
+  /// 此时不发任何网络请求，直接读取 assets/offline.json 里的真实数据快照。
+  /// 默认关闭——独立安装包会自行直连 B 站公开接口，只有断网 / 风控时才
+  /// 自动降级到这份快照，所以不再依赖用户电脑上跑着 Node BFF。
   static const String _offlineFlag =
       String.fromEnvironment('OFFLINE', defaultValue: '');
 
@@ -23,6 +24,10 @@ class ApiConfig {
       _offlineFlag.isNotEmpty &&
       _offlineFlag != '0' &&
       _offlineFlag.toLowerCase() != 'false';
+
+  /// 原生端直连 B 站公开接口，默认开启。
+  /// Web 端受浏览器 CORS 限制必须走同源 BFF；显式指定 BFF_URL 时以调试配置为准。
+  static bool get direct => !offline && !kIsWeb && _override.isEmpty;
 
   static String get baseUrl {
     if (_override.isNotEmpty) return _override;
@@ -47,11 +52,18 @@ class ApiConfig {
     return buffer.toString();
   }
 
-  /// 图片统一走 BFF 代理：规避 Web 端混合内容与 referer 防盗链。
+  /// 图片：Web 走 BFF 代理（规避混合内容与 referer 防盗链）；
+  /// 原生端直连没有这些限制，直接用 https 原图，也不需要本机 BFF。
   static String image(String raw) {
     if (raw.isEmpty) return '';
-    if (offline) return raw.startsWith('//') ? 'https:$raw' : raw;
-    return url('/api/img', {'url': raw});
+    var normalized = raw;
+    if (normalized.startsWith('//')) {
+      normalized = 'https:$normalized';
+    } else if (normalized.startsWith('http://')) {
+      normalized = 'https://${normalized.substring(7)}';
+    }
+    if (offline || direct) return normalized;
+    return url('/api/img', {'url': normalized});
   }
 
   static const Map<String, String> endpoints = {
@@ -66,7 +78,9 @@ class ApiConfig {
   };
 
   /// 给用户看的当前服务地址说明
-  static String get displayBase => offline
-      ? '内置离线快照'
-      : (kIsWeb && _override.isEmpty ? '当前同源服务' : baseUrl);
+  static String get displayBase {
+    if (offline) return '内置离线快照';
+    if (direct) return 'api.bilibili.com（直连）';
+    return kIsWeb && _override.isEmpty ? '当前同源服务' : baseUrl;
+  }
 }

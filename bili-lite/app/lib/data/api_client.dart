@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
 import '../core/config.dart';
+import 'bili_direct.dart';
 import 'models.dart';
 
 class ApiException implements Exception {
@@ -17,8 +18,11 @@ class ApiException implements Exception {
 /// 极薄的 HTTP 封装：统一超时、UTF-8 解码、错误码与数据来源解析。
 /// 不引入 Dio / Retrofit 之类的重依赖，六个平台都能直接跑。
 ///
-/// `--dart-define=OFFLINE=1` 时完全不发网络请求，改读 assets/offline.json
-/// 中的真实数据快照，让独立安装包脱离 BFF 也能开箱即用。
+/// 三条数据链路，按优先级：
+///   1. Web（浏览器 CORS 限制）→ 同源 BFF 代理；
+///   2. 原生端 → 直连 B 站公开接口，拿到的是真正的实时数据；
+///   3. 直连失败 / `--dart-define=OFFLINE=1` → 内置离线快照兜底。
+/// 因此独立安装包既不需要电脑上的 BFF，断网时也不会白屏。
 class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
@@ -36,6 +40,9 @@ class ApiClient {
   }) async {
     if (ApiConfig.offline) {
       return _offline<T>(path, query, parse);
+    }
+    if (ApiConfig.direct) {
+      return _direct<T>(path, query, parse);
     }
 
     final raw = ApiConfig.url(path, query);
@@ -73,6 +80,60 @@ class ApiClient {
       source: meta['source']?.toString() ?? 'live',
       stale: meta['stale'] == true,
     );
+  }
+
+  // ------------------------------------------------------------------
+  // 原生端直连 B 站：成功用实时数据，异常自动降级内置快照
+  // ------------------------------------------------------------------
+
+  Future<ApiResponse<T>> _direct<T>(
+    String path,
+    Map<String, String>? query,
+    T Function(dynamic raw) parse,
+  ) async {
+    // 分区表等静态配置不必联网，直接复用快照里的同一份定义。
+    if (path == '/api/meta') {
+      final snap = await _loadSnapshot();
+      return ApiResponse<T>(
+        data: parse(_payload(snap, path, query ?? const <String, String>{})),
+        source: 'static',
+      );
+    }
+    if (path == '/api/health') {
+      return ApiResponse<T>(data: parse(await _directHealth()), source: 'bili');
+    }
+
+    try {
+      final result = await BiliDirect.instance
+          .fetch(path, query ?? const <String, String>{});
+      return ApiResponse<T>(data: parse(result.data), source: result.source);
+    } catch (_) {
+      // 断网、风控、上游变更都走这里，页面照常可用，来源标记成「离线·陈旧」。
+      final fallback = await _offline<T>(path, query, parse);
+      return ApiResponse<T>(
+          data: fallback.data, source: 'mock', stale: true);
+    }
+  }
+
+  /// 真实探活一次 B 站接口，让设置页如实显示「已连接 / 已降级」。
+  Future<Map<String, dynamic>> _directHealth() async {
+    final online = await BiliDirect.instance.probe();
+    String snapshotAt = '';
+    try {
+      final snap = await _loadSnapshot();
+      snapshotAt = snap['snapshotAt']?.toString() ?? '';
+    } catch (_) {}
+    return <String, dynamic>{
+      'version': '1.2.0',
+      'mockMode': !online,
+      'identity': online
+          ? '直连 B 站 · ${BiliDirect.instance.identity}'
+          : '连接失败 · 已降级离线快照',
+      'snapshotAt': snapshotAt,
+      'cacheEntries': BiliDirect.instance.cacheEntries,
+      'webBuild': false,
+      'uptime': 0,
+    };
   }
 
   // ------------------------------------------------------------------
