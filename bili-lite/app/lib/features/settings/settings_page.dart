@@ -249,6 +249,31 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 14),
 
+          // 账号与数据边界
+          _Card(
+            title: '账号与数据边界',
+            children: const <Widget>[
+              _Paragraph(
+                '本应用不提供登录，不采集、不传输、不存储任何账号数据：没有密码、'
+                'Cookie、SESSDATA、bili_jct、access_token 或 refresh_token，'
+                '也没有账号表、凭证缓存与本地会话。'),
+              SizedBox(height: 10),
+              _Paragraph(
+                '播放使用 B 站官方站外外链播放器（player.bilibili.com）。播放器由官方域名提供，'
+                '登录态、清晰度与版权控制均由官方负责；本应用只传入 BV 号与分 P，'
+                '不解析播放地址、不接触视频流、不注入任何登录态。'),
+              SizedBox(height: 10),
+              _Paragraph(
+                '评论、投币、点赞、收藏等需要账号的互动，请通过「评论 / 投币」入口在官方客户端完成。'
+                '本应用不会代持凭证，也不会代为调用任何需要登录的写接口。'),
+              SizedBox(height: 10),
+              _Paragraph(
+                '本机仅保存收藏、观看历史、稍后再看、搜索历史与外观设置，'
+                '全部留在设备本地，不上传、不关联任何账号。'),
+            ],
+          ),
+          const SizedBox(height: 14),
+
           // 关于
           _Card(
             title: '关于',
@@ -259,7 +284,7 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: 10),
               const _Paragraph(
                 '设计目标是「简洁」：只保留推荐、热门、排行榜、搜索、详情与评论，'
-                '不内嵌播放器、不加载广告、不做个性化信息流追踪。'),
+                '播放交由 B 站官方外链播放器、不加载广告、不做个性化信息流追踪。'),
               const SizedBox(height: 10),
               const _Paragraph(
                 '收藏、历史、稍后再看与搜索历史全部保存在本机，不上传任何服务器，'

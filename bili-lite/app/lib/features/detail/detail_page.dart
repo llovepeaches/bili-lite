@@ -11,6 +11,7 @@ import '../../state/library_state.dart';
 import '../../widgets/cover_image.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/state_views.dart';
+import '../player/player_page.dart';
 
 class VideoDetailPage extends StatefulWidget {
   const VideoDetailPage({Key? key, required this.video}) : super(key: key);
@@ -105,6 +106,14 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
     );
   }
 
+  /// 应用内播放：打开官方外链播放器，不离开当前应用。
+  void _openPlayer() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => PlayerPage(video: _video),
+    ));
+  }
+
+  /// 需要账号的互动（评论 / 投币 / 点赞）统一回官方客户端完成。
   Future<void> _openOriginal() async {
     final url = _video.webUrl;
     final uri = Uri.parse(url);
@@ -154,9 +163,9 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
             ),
           ),
           _GlassIconAction(
-            tooltip: '在 B 站打开',
-            icon: Icons.open_in_new_rounded,
-            onTap: _openOriginal,
+            tooltip: '应用内播放',
+            icon: Icons.play_circle_outline_rounded,
+            onTap: _openPlayer,
           ),
           const SizedBox(width: 8),
         ],
@@ -214,7 +223,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
         AspectRatio(
           aspectRatio: 16 / 9,
           child: GestureDetector(
-            onTap: _openOriginal,
+            onTap: _openPlayer,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -236,7 +245,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
                   child: GlassCircleButton(
                     icon: Icons.play_arrow_rounded,
                     size: 58,
-                    onTap: _openOriginal,
+                    onTap: _openPlayer,
                   ),
                 ),
                 if (v.durationText.isNotEmpty)
@@ -415,15 +424,16 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
               ),
             ),
             _ActionButton(
-              icon: Icons.open_in_new_rounded,
-              label: '在 B 站打开',
+              icon: Icons.mode_comment_outlined,
+              label: '评论 / 投币',
               onTap: _openOriginal,
             ),
           ],
         ),
         const SizedBox(height: 12),
         Text(
-          '简洁客户端不内嵌播放器与信息流广告；点击封面可跳转原站观看。',
+          '点击封面在应用内通过 B 站官方外链播放器观看；评论、投币、点赞等需要账号的互动'
+          '请在官方客户端完成，本应用不持有任何登录凭证。',
           style: TextStyle(fontSize: 11, color: sub, height: 1.5),
         ),
         if (_detailError != null) ...[

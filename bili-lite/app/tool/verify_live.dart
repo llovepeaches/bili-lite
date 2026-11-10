@@ -7,7 +7,7 @@
 
 import 'dart:convert';
 
-import '../lib/data/bili_direct.dart';
+import 'package:bililite/data/bili_direct.dart';
 
 String _title(dynamic data) {
   if (data is List && data.isNotEmpty) {
