@@ -1,0 +1,27 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - "8000:8000"
+    environment:
+      DATA_DIR: /app/data/upstream
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "3000:3000"
+    environment:
+      # 容器间走服务名；浏览器仍只访问同源 /api/*
+      PYTHON_API_ORIGIN: http://api:8000
+    depends_on:
+      - api

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "bili-core"
+version = "0.1.0"
+description = "Rust 计算内核的精简 Python 绑定（PyO3）"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+service = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
+
+[tool.maturin]
+# 只编译胶水 crate；纯逻辑内核 bili-core 作为 rlib 被静态链入
+manifest-path = "rust-py/Cargo.toml"
+python-source = "python"
+module-name = "bili_core._native"
+bindings = "pyo3"
+strip = true

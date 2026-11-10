@@ -1,0 +1,11 @@
+target/
+web/node_modules/
+web/.next/
+dist/
+.git/
+docs/
+**/__pycache__/
+*.so
+*.pyc
+ARCHITECTURE.md
+README.md

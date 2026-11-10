@@ -1,0 +1,16 @@
+[package]
+name = "bili-core-py"
+version = "0.1.0"
+edition = "2021"
+description = "PyO3 胶水层：把 bili-core 内核导出为 Python 扩展模块"
+license = "MIT"
+
+[lib]
+name = "_native"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+bili-core = { path = "../rust" }
+pyo3 = { version = "0.23", features = ["extension-module", "macros"] }
+serde_json = "1"
