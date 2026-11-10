@@ -10,6 +10,10 @@ on:
         description: "Flutter SDK version (project targets 3.0.0 / Dart 2.17)"
         required: false
         default: "3.0.0"
+      only_ios:
+        description: "Skip Windows job (re-run iOS only)"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -18,6 +22,7 @@ permissions:
 jobs:
   windows:
     name: Windows x64 installer (exe)
+    if: ${{ inputs.only_ios != 'true' }}
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
@@ -116,7 +121,9 @@ jobs:
 
   ios:
     name: iOS package (unsigned IPA)
-    runs-on: macos-14
+    # macos-14 在本账号被解析成收费的 macos-14-arm64-us-xl，无法分配。
+    # 用标准 macos-15（arm64 + Rosetta 跑 x64 Flutter 3.0.0）。
+    runs-on: macos-15
     timeout-minutes: 60
     # 没有 Apple Developer 证书 / provisioning profile，只能产出未签名 IPA。
     # 该产物不能直接安装到真机，需按 scripts/resign-ipa.sh 用自有证书重签。
