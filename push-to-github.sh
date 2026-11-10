@@ -12,22 +12,29 @@ VISIBILITY="${GITHUB_VISIBILITY:-private}"
 OWNER="${GITHUB_OWNER:-}"
 
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-if [[ -z "$TOKEN" ]]; then
+if [[ -n "$TOKEN" ]]; then
+  # 方式 A：环境变量注入，令牌只存在于当前进程内存
+  export GH_TOKEN="$TOKEN"
+  unset TOKEN
+elif gh auth status >/dev/null 2>&1; then
+  # 方式 B：gh 凭证管理器（gh auth login，令牌由 gh/系统钥匙串保管）
+  echo "[i] 使用 gh 凭证管理器中已登录的身份"
+else
   cat >&2 <<'HINT'
 [!] 未检测到凭证，已中止（不会发起任何网络请求）。
 
-    请在受信任的终端中安全注入令牌后重新运行：
+    任选一种方式后重新运行：
 
-      read -rsp 'GitHub PAT: ' GH_TOKEN; export GH_TOKEN; echo
-      ./push-to-github.sh
+    A. 环境变量（令牌不进 shell 历史、不落盘）
+         read -rsp 'GitHub PAT: ' GH_TOKEN; export GH_TOKEN; echo
+         ./push-to-github.sh
 
-    read -s 使令牌不进入 shell 历史；export 只放进当前进程环境。
-    或者改用凭证管理器（推荐）： gh auth login --hostname github.com
+    B. 凭证管理器（推荐，浏览器授权，令牌由 gh 保管）
+         gh auth login --hostname github.com
+         ./push-to-github.sh
 HINT
   exit 1
 fi
-export GH_TOKEN="$TOKEN"
-unset TOKEN
 
 command -v gh >/dev/null 2>&1 || { echo "需要 GitHub CLI: https://cli.github.com" >&2; exit 1; }
 
