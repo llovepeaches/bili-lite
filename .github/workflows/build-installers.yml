@@ -1,0 +1,168 @@
+name: Build Windows installer and iOS package
+
+# 本地是 Linux 沙箱，缺 MSVC / Xcode，无法直接编译 Windows / iOS 原生产物。
+# 这条流水线把编译放到 GitHub 托管的 windows / macos runner 上，
+# 产物上传为 Actions artifacts，随后由维护者上传到对应 Release。
+on:
+  workflow_dispatch:
+    inputs:
+      flutter_version:
+        description: "Flutter SDK version (project targets 3.0.0 / Dart 2.17)"
+        required: false
+        default: "3.0.0"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows:
+    name: Windows x64 installer (exe)
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flutter ${{ inputs.flutter_version }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ver = "${{ inputs.flutter_version }}"
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "3.0.0" }
+          $url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_${ver}-stable.zip"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\flutter.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\flutter.zip" -DestinationPath "C:\flutter" -Force
+          Add-Content -Path $env:GITHUB_PATH -Value "C:\flutter\flutter\bin"
+
+      - name: Flutter doctor / version
+        shell: pwsh
+        run: |
+          flutter --version
+          flutter config --enable-windows-desktop
+
+      - name: Build Windows release (offline snapshot baked in)
+        working-directory: bili-lite/app
+        shell: pwsh
+        run: |
+          flutter pub get
+          flutter build windows --release --dart-define=OFFLINE=true
+          Get-ChildItem "build\windows\runner\Release" | Select-Object Name, Length
+
+      - name: Ensure Inno Setup available
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup --yes --no-progress
+            $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) { throw "ISCC.exe not found" }
+          Write-Host "ISCC: $iscc"
+
+      - name: Create exe installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path "installers" | Out-Null
+          $out = Join-Path $env:GITHUB_WORKSPACE "installers"
+          $iss = @"
+          [Setup]
+          AppName=Bili Lite
+          AppVersion=1.2.0
+          AppPublisher=Bili Lite
+          DefaultDirName={autopf}\Bili Lite
+          DefaultGroupName=Bili Lite
+          OutputBaseFilename=BiliLite-1.2.0-Windows-Setup
+          OutputDir=$out
+          Compression=lzma2/max
+          SolidCompression=yes
+          WizardStyle=modern
+          ArchitecturesInstallIn64BitMode=x64
+          DisableProgramGroupPage=yes
+          [Languages]
+          Name: "english"; MessagesFile: "compiler:Default.isl"
+          [Tasks]
+          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+          [Files]
+          Source: "bili-lite\app\build\windows\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          [Icons]
+          Name: "{group}\Bili Lite"; Filename: "{app}\bililite.exe"
+          Name: "{autodesktop}\Bili Lite"; Filename: "{app}\bililite.exe"; Tasks: desktopicon
+          [Run]
+          Filename: "{app}\bililite.exe"; Description: "{cm:LaunchProgram,Bili Lite}"; Flags: nowait postinstall skipifsilent
+          "@
+          # Inno Setup 的 Source 相对路径以 .iss 文件所在目录为基准，
+          # 必须把脚本放在工作区根，才能引用 bili-lite\app\build\...
+          $issPath = Join-Path $env:GITHUB_WORKSPACE "BiliLite.iss"
+          Set-Content -Path $issPath -Value $iss -Encoding UTF8
+          $iscc = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          & $iscc $issPath
+          Get-ChildItem "installers" | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: installers/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  ios:
+    name: iOS package (unsigned IPA)
+    runs-on: macos-14
+    timeout-minutes: 60
+    # 没有 Apple Developer 证书 / provisioning profile，只能产出未签名 IPA。
+    # 该产物不能直接安装到真机，需按 scripts/resign-ipa.sh 用自有证书重签。
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rosetta 2 (Flutter 3.0.0 ships x64 only)
+        run: |
+          /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
+          uname -m
+
+      - name: Install Flutter ${{ inputs.flutter_version }}
+        run: |
+          ver="${{ inputs.flutter_version }}"
+          [ -n "$ver" ] || ver="3.0.0"
+          url="https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_${ver}-stable.zip"
+          echo "Downloading $url"
+          curl -sS -L -o "$RUNNER_TEMP/flutter.zip" "$url"
+          unzip -q "$RUNNER_TEMP/flutter.zip" -d "$HOME/flutter_sdk"
+          echo "$HOME/flutter_sdk/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Xcode / Flutter version
+        run: |
+          xcodebuild -version || true
+          flutter --version
+          flutter doctor -v || true
+
+      - name: Build iOS release (no codesign)
+        working-directory: bili-lite/app
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign --dart-define=OFFLINE=true
+          ls -la build/ios/iphoneos/
+
+      - name: Pack unsigned IPA
+        run: |
+          mkdir -p ipa/Payload
+          cp -R bili-lite/app/build/ios/iphoneos/Runner.app ipa/Payload/
+          cd ipa
+          zip -qry BiliLite-1.2.0-UNSIGNED.ipa Payload
+          unzip -l BiliLite-1.2.0-UNSIGNED.ipa | tail -3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-ipa
+          path: ipa/*.ipa
+          if-no-files-found: warn
+          retention-days: 30
