@@ -6,7 +6,7 @@
 # 本文件自身不包含任何令牌。
 set -euo pipefail
 
-REPO="${GITHUB_REPO:-bilibili-apps}"
+REPO="${GITHUB_REPO:-bili-lite}"
 BRANCH="${GITHUB_BRANCH:-main}"
 VISIBILITY="${GITHUB_VISIBILITY:-private}"
 OWNER="${GITHUB_OWNER:-}"
