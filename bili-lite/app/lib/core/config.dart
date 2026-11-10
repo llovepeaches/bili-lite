@@ -66,6 +66,19 @@ class ApiConfig {
     return url('/api/img', {'url': normalized});
   }
 
+  /// 官方 OAuth 必须经过授权服务端：client_secret 只能留在服务端，客户端拿不到也不该拿到。
+  /// 因此这里不走「原生直连 B 站」的链路，始终指向 BFF（或显式配置的 BFF_URL）。
+  static String oauthUrl(String path) {
+    final base = _override.isNotEmpty ? _override : (kIsWeb ? '' : baseUrl);
+    return '$base$path';
+  }
+
+  /// OAuth 服务地址（给用户看的说明）
+  static String get oauthDisplayBase {
+    if (_override.isNotEmpty) return _override;
+    return kIsWeb ? '当前同源服务' : baseUrl;
+  }
+
   static const Map<String, String> endpoints = {
     'health': '/api/health',
     'meta': '/api/meta',

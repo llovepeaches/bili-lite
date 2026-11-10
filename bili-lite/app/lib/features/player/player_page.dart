@@ -101,7 +101,7 @@ class PlayerPage extends StatelessWidget {
                       const SizedBox(height: 8),
                       Text(
                         '播放能力、清晰度与版权控制由官方播放器负责，本应用只传入 BV 号与分 P，'
-                        '不解析播放地址、不接触视频流、不保存任何账号或登录凭证。'
+                        '不解析播放地址、不接触视频流，也不会把本机保存的 OAuth 凭证注入播放器。'
                         '部分 UP 主可关闭「允许嵌入」，此时播放器会提示前往官方观看。',
                         style: TextStyle(fontSize: 11.5, color: sub, height: 1.6),
                       ),

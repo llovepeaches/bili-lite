@@ -20,6 +20,7 @@ const path = require('path');
 const { biliGet, cached, initIdentity, fetchImage, UpstreamError, cache } = require('./bili');
 const N = require('./normalize');
 const mock = require('./mock');
+const oauth = require('./oauth');
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -69,7 +70,7 @@ const PARTITIONS = [
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 }
 
 function sendJson(res, status, payload) {
@@ -179,6 +180,12 @@ const endpoints = {
         cacheEntries: cache.size,
         webBuild: fs.existsSync(WEB_DIR),
         uptime: Math.floor(process.uptime()),
+        // 只暴露公开配置与是否就绪，绝不返回 client_secret
+        oauth: {
+          configured: oauth.configured(),
+          sandbox: oauth.CFG.sandbox,
+          scopes: oauth.CFG.scopes,
+        },
       },
       meta: {},
     };
@@ -356,6 +363,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 官方 OAuth 2.0：独立分支，因为回调会返回 302 / HTML，且需要读 POST body。
+  if (pathname.startsWith('/api/oauth/')) {
+    const localBase = (
+      process.env.PUBLIC_BASE_URL || `http://${req.headers.host || 'localhost'}`
+    ).replace(/\/+$/, '');
+    const out = await oauth.handle(req, parsed, localBase);
+    if (out.redirect) {
+      res.writeHead(302, { Location: out.redirect, 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+    if (out.html) {
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end(out.html);
+      return;
+    }
+    sendJson(res, out.status || 200, out.json);
+    console.log(`  ${req.method} ${pathname} → ${out.status || 200}`);
+    return;
+  }
+
   if (pathname.startsWith('/api/')) {
     const handler = endpoints[pathname];
     if (!handler) {
@@ -397,6 +428,11 @@ async function main() {
     console.log(`  访客身份 ${id.identitySource}`);
     console.log(`  数据模式 ${MOCK_MODE ? '离线快照 (MOCK_MODE=1)' : 'B 站实时接口 + 异常自动降级'}`);
     console.log(`  Web 产物 ${WEB_DIR} ${fs.existsSync(WEB_DIR) ? '✓' : '（尚未构建）'}`);
+    const oc = oauth.configView();
+    console.log(
+      `  官方登录 ${oc.configured ? (oc.sandbox ? '演示授权（非官方，仅自检）' : '已配置') : '未配置凭证（登录入口停用）'}` +
+        ` scope=${oauth.CFG.scopes.join(',')}`
+    );
     console.log('');
   });
 }

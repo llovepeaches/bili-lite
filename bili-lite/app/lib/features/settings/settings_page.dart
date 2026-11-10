@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/config.dart';
 import '../../core/theme.dart';
+import '../account/account_card.dart';
 import '../../state/globals.dart';
 import '../../state/library_state.dart';
 import '../../widgets/glass.dart';
@@ -249,27 +250,40 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 14),
 
+          // B 站账号（官方 OAuth 2.0，凭证本地持久化）
+          const AccountCard(),
+          const SizedBox(height: 14),
+
           // 账号与数据边界
           _Card(
             title: '账号与数据边界',
             children: const <Widget>[
               _Paragraph(
-                '本应用不提供登录，不采集、不传输、不存储任何账号数据：没有密码、'
-                'Cookie、SESSDATA、bili_jct、access_token 或 refresh_token，'
-                '也没有账号表、凭证缓存与本地会话。'),
+                '登录采用 B 站开放平台官方 OAuth 2.0 授权码流程：在官方授权页完成授权，'
+                '由授权服务端用 client_secret 换取 access_token，客户端领取后把凭证保存在本机。'
+                '全程不接触账号密码，也不读取 Cookie、SESSDATA 或 bili_jct——'
+                '抓取 Web 登录态复用这些字段不是官方登录方式。'),
               SizedBox(height: 10),
               _Paragraph(
-                '播放使用 B 站官方站外外链播放器（player.bilibili.com）。播放器由官方域名提供，'
-                '登录态、清晰度与版权控制均由官方负责；本应用只传入 BV 号与分 P，'
-                '不解析播放地址、不接触视频流、不注入任何登录态。'),
+                'client_secret 只存在于授权服务端的环境变量里，不写入客户端、安装包、'
+                '日志或 Git；授权码 code 也不落客户端。本机保存的 token 仅用于调用'
+                '开放平台已授权的只读接口（当前为 USER_INFO），不上传、不共享。'),
               SizedBox(height: 10),
               _Paragraph(
-                '评论、投币、点赞、收藏等需要账号的互动，请通过「评论 / 投币」入口在官方客户端完成。'
-                '本应用不会代持凭证，也不会代为调用任何需要登录的写接口。'),
+                '官方已开放的 scope 面向创作者与账号侧（USER_INFO、USER_DATA、'
+                'ARC_BASE、ARC_DATA、ATC_BASE、ATC_DATA 等），不包含观看侧的'
+                '评论、投币、点赞接口。因此这些互动仍通过「评论 / 投币」入口在官方客户端完成，'
+                '本应用不会用 OAuth token 去调用未开放的写接口，也不会逆向 WBI 签名。'),
               SizedBox(height: 10),
               _Paragraph(
-                '本机仅保存收藏、观看历史、稍后再看、搜索历史与外观设置，'
-                '全部留在设备本地，不上传、不关联任何账号。'),
+                '播放使用 B 站官方站外外链播放器（player.bilibili.com）：只传 BV 号与分 P，'
+                '不解析播放地址、不接触视频流、不把 OAuth 登录态注入播放器；'
+                '登录态、清晰度与版权控制均由官方域名负责。'),
+              SizedBox(height: 10),
+              _Paragraph(
+                '收藏、观看历史、稍后再看、搜索历史与外观设置继续留在本机，不关联账号。'
+                '「退出登录」只清除本机凭证；如需在 B 站侧彻底解除授权，'
+                '请到 B 站账号设置的授权管理中操作。'),
             ],
           ),
           const SizedBox(height: 14),
@@ -288,7 +302,7 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: 10),
               const _Paragraph(
                 '收藏、历史、稍后再看与搜索历史全部保存在本机，不上传任何服务器，'
-                '也不需要登录 B 站账号。'),
+                '浏览内容无需登录；B 站账号登录仅用于官方 OAuth 授权与展示用户公开资料。'),
               const SizedBox(height: 10),
               _row('App 版本', '1.2.0'),
               _row('支持平台', 'Android / iOS / Web / Windows / macOS / Linux'),

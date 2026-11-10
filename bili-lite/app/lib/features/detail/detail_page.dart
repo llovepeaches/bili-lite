@@ -432,8 +432,8 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
         ),
         const SizedBox(height: 12),
         Text(
-          '点击封面在应用内通过 B 站官方外链播放器观看；评论、投币、点赞等需要账号的互动'
-          '请在官方客户端完成，本应用不持有任何登录凭证。',
+          '点击封面在应用内通过 B 站官方外链播放器观看；评论、投币、点赞等观看侧互动'
+          '请在官方客户端完成——开放平台没有对应 scope，本应用不会用 OAuth 凭证调用写接口。',
           style: TextStyle(fontSize: 11, color: sub, height: 1.5),
         ),
         if (_detailError != null) ...[
