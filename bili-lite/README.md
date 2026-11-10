@@ -15,24 +15,34 @@
 │  首页推荐/热门/排行榜 · 搜索 · 详情+评论 · 我的 · 设置           │
 │  液态玻璃：iOS 26 式透镜 + 边缘折射高光 + Clear / Tinted 双材质  │
 │  自适应布局：<700px 底部导航 / ≥700px 侧栏；2~5 列网格           │
-└───────────────────────────┬──────────────────────────────────┘
-                            │ 统一 REST（/api/*）
-┌───────────────────────────▼──────────────────────────────────┐
-│  Node BFF（零第三方依赖，node src/index.js 直接跑）             │
-│  ① 注入 buvid3/buvid4 访客身份与 UA/Referer（绕过风控页）       │
-│  ② 把 5 套上游字段归一成单一 Video / Comment 模型               │
-│  ③ 内存缓存 + stale-on-error + 离线快照自动降级                 │
-│  ④ 图片代理（防盗链 / 混合内容）⑤ 托管 Flutter Web 产物          │
-└───────────────────────────┬──────────────────────────────────┘
-                            │ HTTPS
-┌───────────────────────────▼──────────────────────────────────┐
+└──────────┬──────────────────────────────┬──────────────────────┘
+           │ Web：同源 REST /api/*         │ 原生端：HTTPS 直连
+┌──────────▼───────────────────────────┐  │
+│  Node BFF（零依赖，node src/index.js）│  │ Dart 直连客户端
+│  ① spi 访客身份 + UA/Referer 注入     │  │ bili_direct.dart
+│  ② 5 套上游字段归一为 Video/Comment   │  │ 同一套归一规则
+│  ③ 缓存 + stale-on-error + 快照降级   │  │ 同一套访客身份
+│  ④ 图片代理 ⑤ 托管 Flutter Web 产物   │  │ 进程内 TTL 缓存
+└──────────┬───────────────────────────┘  │
+           │ HTTPS                        │ HTTPS
+┌──────────▼──────────────────────────────▼───────────────────┐
 │  api.bilibili.com 公开 Web 接口                                │
-│  rcmd / popular / ranking v2 / search / view / reply           │
+│  rcmd / popular / ranking v2 / search / view / reply / spi     │
 └──────────────────────────────────────────────────────────────┘
+           任一层失败 → assets/offline.json 内置真实快照自动降级
 ```
 
-**为什么要 BFF**：B 站接口没有给第三方开放 CORS，且无访客 Cookie 时详情/搜索接口会直接返回风控 HTML 页。
-把身份注入、字段归一、缓存与降级放在服务端，客户端才能保持极简，六个平台共用同一份数据契约。
+**三条数据链路**（`ApiConfig` / `ApiClient` 决定）：
+
+| 场景 | 链路 | 说明 |
+| --- | --- | --- |
+| Web | 同源 BFF 代理 | 浏览器有 CORS 限制，且 Web 端图片需代理规避防盗链 |
+| Android / iOS / Windows / macOS / Linux | **直连 B 站公开接口** | 安装包不需要电脑上的 Node BFF，装好就是实时数据 |
+| 断网 / 风控 / 上游异常，或 `OFFLINE=1` | 内置离线快照 | 界面不白屏，来源标签显示「离线·陈旧」 |
+
+Web 之所以仍要 BFF：B 站没有给第三方开放 CORS，且无访客 Cookie 时详情/搜索接口会返回风控 HTML 页。
+原生端没有这两个限制，因此 `bili_direct.dart` 用 spi 动态换取 `buvid3/buvid4`（失败则有兜底身份），
+再按与 `server/src/normalize.js` 同构的规则归一。设置页会如实显示「已连接 B 站 / 已降级」与当前访客身份。
 
 ---
 
@@ -56,6 +66,10 @@ flutter build web
 
 只想看 UI、不联网也可以：`MOCK_MODE=1 node src/index.js`，全部走内置的真实数据快照。
 
+**独立安装包不需要上面这个服务**：Android APK / Windows exe 会自行直连 B 站公开接口拿实时数据，
+只有连不上时才降级到内置的 `assets/offline.json`。真机调试若想改回走本机 BFF，
+用 `flutter run --dart-define=BFF_URL=http://<电脑IP>:8787`；完全禁用联网则加 `--dart-define=OFFLINE=1`。
+
 ---
 
 ## 功能
@@ -69,7 +83,7 @@ flutter build web
 | 设置 | 浅色 / 深色 / 跟随系统、**液态玻璃开关 / 浓度 / 通透·着色材质 / 动态光晕**、服务状态与健康检查、缓存条目、清空本地数据、合规说明 |
 
 **设计取舍**：不内嵌播放器、不加载广告、不做个性化追踪。点击封面跳转原站观看（打不开时自动复制链接）。
-数据状态在 UI 上以「实时 / 缓存 / 离线」标签透明展示。
+数据状态在 UI 上以「B 站实时 / 实时 / 缓存 / 离线」标签透明展示，设置页可见当前连接方式与访客身份。
 
 页面效果截图见 [`docs/preview/`](docs/preview/)；六个平台的构建命令见 [`docs/多端构建.md`](docs/多端构建.md)。
 
@@ -166,7 +180,8 @@ bili-lite/
 | `MOCK_MODE` | `0` | 置 `1` 完全使用离线快照 |
 | `UPSTREAM_TIMEOUT` | `10000` | 上游超时（ms） |
 | `WEB_DIR` | `app/build/web` | Flutter Web 产物目录 |
-| `BFF_URL` | 自动 | **Flutter 编译参数**：`--dart-define=BFF_URL=http://<IP>:8787`，真机调试必填 |
+| `BFF_URL` | 自动 | **Flutter 编译参数**：`--dart-define=BFF_URL=http://<IP>:8787`，让原生端改走指定 BFF |
+| `OFFLINE` | `0` | **Flutter 编译参数**：置 `1` 完全不发网络请求，纯内置快照；默认关闭（在线直连） |
 
 ---
 
@@ -174,7 +189,7 @@ bili-lite/
 
 - **评论条数**：未登录的访客身份下，B 站 `/x/v2/reply` 通常只开放少量热评（实测 3 条，`is_end=true`）。已验证 WBI 签名的新接口结果相同，属于上游策略而非实现问题。
 - **不提供播放**：需要登录态 Cookie / 播放鉴权，第三方简洁客户端不做这层。
-- **接口稳定性**：上游可能调整字段或加风控；`normalize.js` 是唯一的字段适配点，且所有接口都有真实快照兜底。
+- **接口稳定性**：上游可能调整字段或加风控；Web 链路的适配点是 `server/src/normalize.js`，原生直连链路是 `app/lib/data/bili_direct.dart`，两处规则同构，改动需同步；所有接口都有真实快照兜底。
 - **工具链**：本工程在 Flutter 3.0 / Dart 2.17 上验证通过，依赖刻意压到 4 个，较新 SDK 同样可用。
 - **Web 玻璃模糊**：html renderer 下不启用 `BackdropFilter`，改用 Canvas 渐变、边缘折射环与镜面亮斑模拟透镜；光学层与内容合并为单一渲染对象，避免 html renderer 的负 z-index canvas 盖住文字。原生端启用真实背景模糊。若改用 `flutter build web --web-renderer canvaskit`，需自行评估首包体积与字体加载。
 - **着色 Tinted 档偏保守**：为保证文字可读性抬高了不透明度，观感比通透 Clear 更接近实色卡片；想看最典型的 iOS 26 透镜效果请用默认的通透档。

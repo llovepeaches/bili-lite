@@ -35,7 +35,7 @@ echo "[1/4] 依赖与 Flutter 版本"
 ( cd "$APP_DIR" && flutter --version | head -2 && flutter pub get )
 
 echo "[2/4] 构建 iOS release（不签名）"
-( cd "$APP_DIR" && flutter build ios --release --no-codesign --dart-define=OFFLINE=true )
+( cd "$APP_DIR" && flutter build ios --release --no-codesign )
 APP="$APP_DIR/build/ios/iphoneos/Runner.app"
 [ -d "$APP" ] || { echo "[!] 未产出 Runner.app"; exit 1; }
 
