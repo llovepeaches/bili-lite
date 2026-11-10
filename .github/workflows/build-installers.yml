@@ -14,6 +14,10 @@ on:
         description: "Skip Windows job (re-run iOS only)"
         required: false
         default: "false"
+      try_ios:
+        description: "Attempt iOS job (currently blocked by Flutter 3.0 vs Xcode 16 toolchain gap)"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -121,6 +125,12 @@ jobs:
 
   ios:
     name: iOS package (unsigned IPA)
+    # 默认关闭：Flutter 3.0.0（2022）与 macOS-15 runner 的 Xcode 16.4 /
+    # Ruby 3.3 / CocoaPods 1.17 存在多层不兼容（File.exists?、Podfile
+    # instance_eval 作用域、CocoaPods target_validator 的空 ARCHS 等）。
+    # 且 CI 无 Apple 签名证书，产物只能是未签名 IPA，无法安装到真机。
+    # 请在本地 macOS + 匹配的 Xcode 上用 scripts/build-ios-local.sh 构建。
+    if: ${{ inputs.try_ios == 'true' }}
     # macos-14 在本账号被解析成收费的 macos-14-arm64-us-xl，无法分配。
     # 用标准 macos-15（arm64 + Rosetta 跑 x64 Flutter 3.0.0）。
     runs-on: macos-15
