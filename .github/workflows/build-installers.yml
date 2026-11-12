@@ -393,3 +393,58 @@ jobs:
           path: ipa/*.ipa
           if-no-files-found: warn
           retention-days: 30
+
+  checksums:
+    name: Checksums and publish
+    # 汇总所有 job 的产物，统一生成 SHA256SUMS 并发布，
+    # 避免校验和需要手工维护而与实际资产脱节。
+    needs: [android, windows, web]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect build artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p installers
+          find artifacts -type f \( -name "*.apk" -o -name "*.exe" -o -name "bili-lite-web-v*" \) \
+            -exec cp {} installers/ \;
+          ls -la installers/
+
+      - name: Fetch source archives already on the Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "bili-lite-v*-src.*" --dir installers/ || \
+            echo "::warning::未找到源码归档，跳过"
+
+      - name: Generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd installers
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: installers/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish to Release
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" installers/SHA256SUMS \
+            --clobber --repo "$GITHUB_REPOSITORY"
