@@ -66,9 +66,32 @@ jobs:
       - name: Install Android SDK packages
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          # runner 预装了 Android SDK，但 sdkmanager 不在 PATH 里，需要自己定位 cmdline-tools。
+          if ! command -v sdkmanager >/dev/null 2>&1; then
+            sm=$(find "$ANDROID_HOME/cmdline-tools" "$ANDROID_HOME/tools" -maxdepth 4 -name sdkmanager -type f 2>/dev/null | head -1 || true)
+            if [ -n "$sm" ]; then
+              export PATH="$(dirname "$sm"):$PATH"
+            fi
+          fi
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "sdkmanager: $(command -v sdkmanager || echo 'not found')"
           # compileSdk/targetSdk 由 Flutter 3.0 决定（31），build-tools 30.0.3 是 AGP 4.2.2 的默认版本。
-          sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3"
+          # 装不上也不直接失败：AGP 仍可自行解析已预装的 platform。
+          if command -v sdkmanager >/dev/null 2>&1; then
+            yes | sdkmanager --licenses >/dev/null 2>&1 || true
+            sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3" || \
+              echo "::warning::部分 SDK 包安装失败，继续使用 runner 预装版本"
+          fi
+          echo "--- platforms ---"; ls "$ANDROID_HOME/platforms" 2>/dev/null || true
+          echo "--- build-tools ---"; ls "$ANDROID_HOME/build-tools" 2>/dev/null || true
+
+      - name: Point Flutter at the Android SDK
+        run: |
+          set -euo pipefail
+          flutter config --android-sdk "$ANDROID_HOME"
+          flutter doctor -v 2>&1 | grep -iE "android toolchain|android sdk|✗|!" | head -20 || true
 
       - name: Restore release signing keystore
         run: |
