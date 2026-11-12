@@ -1,0 +1,50 @@
+name: Setup Flutter SDK
+
+description: 安装指定版本的 Flutter SDK 并预热 pub 缓存，供 Android / Web / iOS 构建复用
+
+inputs:
+  version:
+    description: Flutter SDK 版本
+    required: true
+    default: "3.0.0"
+
+runs:
+  using: composite
+  steps:
+    - name: Cache pub cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.pub-cache
+        key: pub-${{ runner.os }}-${{ inputs.version }}-${{ hashFiles('bili-lite/app/pubspec.yaml') }}
+        restore-keys: |
+          pub-${{ runner.os }}-${{ inputs.version }}-
+
+    - name: Download and install Flutter ${{ inputs.version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        ver="${{ inputs.version }}"
+        case "$RUNNER_OS" in
+          Linux)   url="https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${ver}-stable.tar.xz" ;;
+          macOS)   url="https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_${ver}-stable.zip" ;;
+          Windows) url="https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_${ver}-stable.zip" ;;
+          *) echo "unsupported runner: $RUNNER_OS"; exit 1 ;;
+        esac
+        echo "Downloading $url"
+        curl -sS -L --retry 3 --retry-delay 5 -o "$RUNNER_TEMP/flutter.bin" "$url"
+        mkdir -p "$RUNNER_TEMP/flutter_sdk"
+        case "$RUNNER_OS" in
+          Linux)   tar -xf "$RUNNER_TEMP/flutter.bin" -C "$RUNNER_TEMP/flutter_sdk" ;;
+          macOS)   unzip -q "$RUNNER_TEMP/flutter.bin" -d "$RUNNER_TEMP/flutter_sdk" ;;
+          Windows) unzip -q "$RUNNER_TEMP/flutter.bin" -d "$RUNNER_TEMP/flutter_sdk" ;;
+        esac
+        flutter_bin="$RUNNER_TEMP/flutter_sdk/flutter/bin"
+        echo "$flutter_bin" >> "$GITHUB_PATH"
+        # Git 安全目录：flutter 工具会以 git 读取版本号
+        git config --global --add safe.directory "$RUNNER_TEMP/flutter_sdk/flutter" || true
+
+    - name: Flutter version
+      shell: bash
+      run: |
+        flutter --version
+        flutter config --no-analytics || true

@@ -1,8 +1,13 @@
-name: Build Windows installer and iOS package
+name: Build installers
 
-# 本地是 Linux 沙箱，缺 MSVC / Xcode，无法直接编译 Windows / iOS 原生产物。
-# 这条流水线把编译放到 GitHub 托管的 windows / macos runner 上，
-# 产物上传为 Actions artifacts，随后由维护者上传到对应 Release。
+# 本地是 Linux 沙箱，缺 MSVC / Xcode / 稳定 Android 工具链。
+# 这条流水线把所有原生产物的编译统一放到 GitHub 托管 runner 上：
+#   android → APK（release 签名）
+#   windows → exe 安装程序（Inno Setup）
+#   web     → Web 静态产物 + BFF 源码包
+#   ios     → 未签名 IPA（默认关闭，需 macOS + Apple 证书）
+# 产物既作为 Actions artifact 留存，也直接发布到对应的 GitHub Release。
+
 on:
   workflow_dispatch:
     inputs:
@@ -10,39 +15,162 @@ on:
         description: "Flutter SDK version (project targets 3.0.0 / Dart 2.17)"
         required: false
         default: "3.0.0"
-      only_ios:
-        description: "Skip Windows job (re-run iOS only)"
+      release_tag:
+        description: "Release tag to publish assets to"
+        required: false
+        default: "bili-lite-v1.2.0"
+      publish:
+        description: "Upload artifacts to the GitHub Release"
+        required: false
+        default: "true"
+      run_ios:
+        description: "Attempt iOS job (blocked by Flutter 3.0 vs Xcode 16 toolchain gap)"
         required: false
         default: "false"
-      try_ios:
-        description: "Attempt iOS job (currently blocked by Flutter 3.0 vs Xcode 16 toolchain gap)"
-        required: false
-        default: "false"
+  push:
+    tags:
+      - "bili-lite-v*"
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: ${{ inputs.flutter_version || '3.0.0' }}
+  RELEASE_TAG: ${{ inputs.release_tag || 'bili-lite-v1.2.0' }}
+  PUBLISH: ${{ inputs.publish || 'true' }}
+
 jobs:
+  android:
+    name: Android release APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # AGP 4.2.2 官方支持 JDK 8 / 11，这里固定 11。
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+          cache: gradle
+
+      - uses: actions/setup-gradle@v3
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - uses: ./.github/actions/setup-flutter
+        with:
+          version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          # compileSdk/targetSdk 由 Flutter 3.0 决定（31），build-tools 30.0.3 是 AGP 4.2.2 的默认版本。
+          sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3"
+
+      - name: Restore release signing keystore
+        run: |
+          set -euo pipefail
+          dir="$GITHUB_WORKSPACE/bili-lite/app/android"
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_B64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > "$dir/bililite-release.jks"
+            pass="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            alias="${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "使用仓库 Secret 中的正式签名密钥"
+          else
+            # 没有 Secret 时用一次性密钥，仅保证流水线能跑通，产物不可覆盖升级。
+            pass="ci-temporary"
+            alias="bililite"
+            keytool -genkeypair -v -keystore "$dir/bililite-release.jks" -storetype JKS \
+              -storepass "$pass" -keypass "$pass" -alias "$alias" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Bili Lite CI, O=Bili Lite, C=CN"
+            echo "::warning::未配置 ANDROID_KEYSTORE_B64，本次使用一次性 CI 密钥，产物无法覆盖升级"
+          fi
+          cat > "$dir/key.properties" <<EOF
+          storePassword=$pass
+          keyPassword=$pass
+          keyAlias=$alias
+          storeFile=../bililite-release.jks
+          EOF
+
+      - name: Build release APK
+        working-directory: bili-lite/app
+        run: |
+          set -euo pipefail
+          flutter pub get
+          # 不加 OFFLINE：原生端默认直连 B 站公开接口；
+          # assets/offline.json 仍会打进包里，断网 / 风控时自动降级。
+          flutter build apk --release
+          ls -la build/app/outputs/flutter-apk/
+
+      - name: Verify APK signature and contents
+        working-directory: bili-lite/app
+        run: |
+          set -euo pipefail
+          apk="build/app/outputs/flutter-apk/app-release.apk"
+          bt=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          echo "build-tools: $bt"
+          "$bt/apksigner" verify --print-certs "$apk" | head -6
+          "$bt/aapt" dump badging "$apk" | grep -E "^package:|^native-code" | head -4
+          unzip -l "$apk" | grep -E "offline.json" || true
+
+      - name: Stage asset
+        run: |
+          set -euo pipefail
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          mkdir -p installers
+          cp bili-lite/app/build/app/outputs/flutter-apk/app-release.apk "installers/BiliLite-${version}-Android.apk"
+          echo "ASSET_NAME=BiliLite-${version}-Android.apk" >> "$GITHUB_ENV"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          ls -la installers/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: installers/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish to Release
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" "installers/${{ env.ASSET_NAME }}" \
+            --clobber --repo "$GITHUB_REPOSITORY"
+          echo "已发布 ${{ env.ASSET_NAME }} 到 $RELEASE_TAG"
+
   windows:
     name: Windows x64 installer (exe)
-    if: ${{ inputs.only_ios != 'true' }}
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Flutter ${{ inputs.flutter_version }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Install Flutter ${{ env.FLUTTER_VERSION }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $ver = "${{ inputs.flutter_version }}"
-          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "3.0.0" }
+          $ver = "${{ env.FLUTTER_VERSION }}"
           $url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_${ver}-stable.zip"
           Write-Host "Downloading $url"
           Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\flutter.zip"
-          Expand-Archive -Path "$env:RUNNER_TEMP\flutter.zip" -DestinationPath "C:\flutter" -Force
-          Add-Content -Path $env:GITHUB_PATH -Value "C:\flutter\flutter\bin"
+          Expand-Archive -Path "$env:RUNNER_TEMP\flutter.zip" -DestinationPath "$env:RUNNER_TEMP\flutter_sdk" -Force
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:RUNNER_TEMP\flutter_sdk\flutter\bin"
+          git config --global --add safe.directory "$env:RUNNER_TEMP\flutter_sdk\flutter"
 
       - name: Flutter doctor / version
         shell: pwsh
@@ -55,8 +183,6 @@ jobs:
         shell: pwsh
         run: |
           flutter pub get
-          # 不加 OFFLINE：原生端默认直连 B 站公开接口；
-          # assets/offline.json 仍会打进包里，断网 / 风控时自动降级。
           flutter build windows --release
           Get-ChildItem "build\windows\runner\Release" | Select-Object Name, Length
 
@@ -125,6 +251,74 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Publish to Release
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ver = (Select-String -Path "bili-lite\app\pubspec.yaml" -Pattern '^version:\s*([0-9]+\.[0-9]+\.[0-9]+)').Matches[0].Groups[1].Value
+          $asset = "BiliLite-$ver-Windows-Setup.exe"
+          Copy-Item "installers\BiliLite-1.2.0-Windows-Setup.exe" "installers\$asset" -Force
+          gh release upload $env:RELEASE_TAG "installers\$asset" --clobber --repo $env:GITHUB_REPOSITORY
+          Write-Host "已发布 $asset 到 $env:RELEASE_TAG"
+
+  web:
+    name: Web bundle + BFF package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - uses: ./.github/actions/setup-flutter
+        with:
+          version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Build web release (html renderer)
+        working-directory: bili-lite/app
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build web --release --web-renderer html
+          du -sh build/web
+
+      - name: Package web + BFF
+        run: |
+          set -euo pipefail
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          rm -rf staging
+          mkdir -p staging/bili-lite-web
+          cp -R bili-lite/app/build/web staging/bili-lite-web/web
+          cp -R bili-lite/server staging/bili-lite-web/server
+          cp bili-lite/README.md staging/bili-lite-web/
+          mkdir -p installers
+          tar -czf "installers/bili-lite-web-v${version}.tar.gz" -C staging bili-lite-web
+          (cd staging && zip -qr "../installers/bili-lite-web-v${version}.zip" bili-lite-web)
+          echo "ASSET_NAME=bili-lite-web-v${version}.tar.gz" >> "$GITHUB_ENV"
+          ls -la installers/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: installers/bili-lite-web-v*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish to Release
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" "installers/${{ env.ASSET_NAME }}" \
+            --clobber --repo "$GITHUB_REPOSITORY"
+
   ios:
     name: iOS package (unsigned IPA)
     # 默认关闭：Flutter 3.0.0（2022）与 macOS-15 runner 的 Xcode 16.4 /
@@ -132,13 +326,11 @@ jobs:
     # instance_eval 作用域、CocoaPods target_validator 的空 ARCHS 等）。
     # 且 CI 无 Apple 签名证书，产物只能是未签名 IPA，无法安装到真机。
     # 请在本地 macOS + 匹配的 Xcode 上用 scripts/build-ios-local.sh 构建。
-    if: ${{ inputs.try_ios == 'true' }}
+    if: ${{ inputs.run_ios == 'true' }}
     # macos-14 在本账号被解析成收费的 macos-14-arm64-us-xl，无法分配。
     # 用标准 macos-15（arm64 + Rosetta 跑 x64 Flutter 3.0.0）。
     runs-on: macos-15
     timeout-minutes: 60
-    # 没有 Apple Developer 证书 / provisioning profile，只能产出未签名 IPA。
-    # 该产物不能直接安装到真机，需按 scripts/resign-ipa.sh 用自有证书重签。
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -148,15 +340,9 @@ jobs:
           /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
           uname -m
 
-      - name: Install Flutter ${{ inputs.flutter_version }}
-        run: |
-          ver="${{ inputs.flutter_version }}"
-          [ -n "$ver" ] || ver="3.0.0"
-          url="https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_${ver}-stable.zip"
-          echo "Downloading $url"
-          curl -sS -L -o "$RUNNER_TEMP/flutter.zip" "$url"
-          unzip -q "$RUNNER_TEMP/flutter.zip" -d "$HOME/flutter_sdk"
-          echo "$HOME/flutter_sdk/flutter/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/setup-flutter
+        with:
+          version: ${{ env.FLUTTER_VERSION }}
 
       - name: Xcode / Flutter version
         run: |
