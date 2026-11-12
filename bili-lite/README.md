@@ -112,8 +112,9 @@ gh workflow run build-installers.yml -f release_tag=bili-lite-v1.2.0 -f publish=
 ```
 
 Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入库），可覆盖升级。
-iOS IPA 需 macOS + Apple 证书，用 `scripts/build-ios-local.sh` 在本机构建，
-详见[多端构建指南](docs/多端构建.md)。
+iOS IPA 需要 macOS + Xcode + Apple 签名证书，用 `scripts/build-ios-local.sh` 在本机构建，
+或用 `scripts/ios-preflight.sh` 先做环境自检；
+完整的「三道坎 + 三条路径」说明见 [iOS 打包指南](docs/iOS打包指南.md)。
 
 ---
 

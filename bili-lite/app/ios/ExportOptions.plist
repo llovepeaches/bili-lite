@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  xcodebuild -exportArchive 的导出参数。
+	  teamID 在 CI 里由 PlistBuddy 替换成真实的开发者团队 ID；
+	  本地构建时也可以直接改这里。
+	  destination=export 表示只导出 IPA、不由 xcodebuild 上传，
+	  上传动作交给 xcrun altool，这样错误信息更明确。
+	-->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>TEAMID_PLACEHOLDER</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>uploadBitcode</key>
+	<false/>
+	<key>compileBitcode</key>
+	<false/>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>

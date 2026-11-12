@@ -6,8 +6,9 @@ unless ::File.respond_to?(:exists?)
   ::File.define_singleton_method(:exists?) { |path| ::File.exist?(path) }
 end
 
-# Xcode 15+ 最低支持 iOS 12 deployment target（Flutter 3.0 模板原为 11.0）。
-platform :ios, '12.0'
+# Xcode 15+ 最低支持 iOS 12 deployment target，Xcode 16 起 deployment target
+# 下限为 12.0；这里统一取 13.0，与 Runner.xcodeproj 里的 IPHONEOS_DEPLOYMENT_TARGET 保持一致。
+platform :ios, '13.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -46,7 +47,12 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      # CocoaPods 在只构建 arm64 模拟器时会把 EXCLUDED_ARCHS 置空，
+      # CocoaPods 1.16+ 的 target_validator 校验空 ARCHS 会抛
+      # "undefined method `each' for nil"。这里补上默认值并清掉空的排除项。
+      config.build_settings['ARCHS'] = '$(ARCHS_STANDARD)' if config.build_settings['ARCHS'].to_s.empty?
+      config.build_settings.delete('EXCLUDED_ARCHS') if config.build_settings['EXCLUDED_ARCHS'].to_s.empty?
     end
   end
 

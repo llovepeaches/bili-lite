@@ -24,7 +24,15 @@ on:
         required: false
         default: "true"
       run_ios:
-        description: "Attempt iOS job (blocked by Flutter 3.0 vs Xcode 16 toolchain gap)"
+        description: "Attempt iOS job (needs Flutter >= 3.24.4 for Xcode 16 compatibility)"
+        required: false
+        default: "false"
+      xcode_version:
+        description: "Xcode version on the macOS runner (empty = image default). macos-15 ships 16.0~16.4 and 26.x"
+        required: false
+        default: ""
+      publish_testflight:
+        description: "Sign with App Store Connect API key and upload to TestFlight (needs Apple Developer Program + ASC secrets)"
         required: false
         default: "false"
   push:
@@ -342,55 +350,209 @@ jobs:
             --clobber --repo "$GITHUB_REPOSITORY"
 
   ios:
-    name: iOS package (unsigned IPA)
-    # 默认关闭：Flutter 3.0.0（2022）与 macOS-15 runner 的 Xcode 16.4 /
-    # Ruby 3.3 / CocoaPods 1.17 存在多层不兼容（File.exists?、Podfile
-    # instance_eval 作用域、CocoaPods target_validator 的空 ARCHS 等）。
-    # 且 CI 无 Apple 签名证书，产物只能是未签名 IPA，无法安装到真机。
-    # 请在本地 macOS + 匹配的 Xcode 上用 scripts/build-ios-local.sh 构建。
+    name: iOS unsigned IPA (build smoke test)
+    # 产出未签名 IPA，用于验证 iOS 编译链路本身是否通畅。
+    #
+    # 关键约束（2026-11 实测）：
+    #   * macos-13 已于 2025-12 下线，macos-14 已于 2026-11-02 EOL，
+    #     现在只剩 macos-15（Xcode 16.0~16.4、26.x）与 macos-26；
+    #   * 镜像里已没有 Xcode 15.x，无法再靠降级 Xcode 绕开 Xcode 16；
+    #   * Xcode 16 强制 deployment target >= 12.0（工程已统一到 13.0）；
+    #   * Flutter 3.0.0 与 Xcode 16 不兼容，官方在 Flutter 3.24.4 才修复
+    #     xcode_backend.sh 与 Generated.xcconfig 模板。
+    # 因此本 job 在 flutter_version=3.0.0 时大概率失败；把它切到
+    # >= 3.24.4 才是可用的组合。
     if: ${{ inputs.run_ios == 'true' }}
-    # macos-14 在本账号被解析成收费的 macos-14-arm64-us-xl，无法分配。
-    # 用标准 macos-15（arm64 + Rosetta 跑 x64 Flutter 3.0.0）。
     runs-on: macos-15
     timeout-minutes: 60
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rosetta 2 (Flutter 3.0.0 ships x64 only)
+      - name: Select Xcode
         run: |
-          /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
-          uname -m
+          set -euo pipefail
+          want="${{ inputs.xcode_version }}"
+          if [ -n "$want" ]; then
+            app=$(ls -d "/Applications/Xcode_${want}"*.app 2>/dev/null | head -1 || true)
+            if [ -z "$app" ]; then
+              echo "::error::Xcode $want not installed on this image"
+              ls -d /Applications/Xcode*.app
+              exit 1
+            fi
+            sudo xcode-select -s "$app"
+          fi
+          xcodebuild -version
+          xcode-select -p
 
       - uses: ./.github/actions/setup-flutter
         with:
           version: ${{ env.FLUTTER_VERSION }}
 
-      - name: Xcode / Flutter version
+      - name: Toolchain report
         run: |
-          xcodebuild -version || true
           flutter --version
-          flutter doctor -v || true
+          ruby --version || true
+          pod --version || true
+          echo "APPLE_TEAM_ID secret present: ${{ secrets.APPLE_TEAM_ID != '' }}"
+
+      - name: Resolve app version
+        run: |
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+          echo "版本: $version"
 
       - name: Build iOS release (no codesign)
         working-directory: bili-lite/app
         run: |
+          set -euo pipefail
           flutter pub get
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign --build-number="${GITHUB_RUN_NUMBER}"
           ls -la build/ios/iphoneos/
 
       - name: Pack unsigned IPA
         run: |
+          set -euo pipefail
           mkdir -p ipa/Payload
           cp -R bili-lite/app/build/ios/iphoneos/Runner.app ipa/Payload/
           cd ipa
-          zip -qry BiliLite-1.2.0-UNSIGNED.ipa Payload
-          unzip -l BiliLite-1.2.0-UNSIGNED.ipa | tail -3
+          zip -qry "BiliLite-${APP_VERSION}-UNSIGNED.ipa" Payload
+          unzip -l "BiliLite-${APP_VERSION}-UNSIGNED.ipa" | tail -3
 
       - uses: actions/upload-artifact@v4
         with:
           name: ios-unsigned-ipa
           path: ipa/*.ipa
+          if-no-files-found: warn
+          retention-days: 30
+
+  ios-testflight:
+    name: iOS signed IPA → TestFlight
+    # 产出**可安装**的 IPA 并上传到 TestFlight，用户装 TestFlight 即可使用。
+    #
+    # 需要仓库 Secrets（创建方式见 docs/iOS打包指南.md）：
+    #   APP_STORE_CONNECT_ISSUER_ID   App Store Connect 的 Issuer ID
+    #   APP_STORE_CONNECT_KEY_ID      API Key 的 Key ID
+    #   APP_STORE_CONNECT_KEY_CONTENT .p8 私钥的 base64
+    #   APPLE_TEAM_ID                 开发者团队 ID
+    # 以及 Apple Developer Program 账号（$99/年）。
+    #
+    # 签名用 xcodebuild 的 -allowProvisioningUpdates + API Key，
+    # 由 Xcode 自己在开发者门户创建证书与描述文件，无需手动导入 p12。
+    if: ${{ inputs.run_ios == 'true' && inputs.publish_testflight == 'true' }}
+    needs: [ios]
+    runs-on: macos-15
+    timeout-minutes: 90
+    environment: release
+    env:
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_KEY_CONTENT }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # altool 按文件名在 API_PRIVATE_KEYS_DIR 里找 AuthKey_<KeyID>.p8
+      API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/asc_keys
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        run: |
+          set -euo pipefail
+          missing=""
+          for v in ASC_ISSUER_ID ASC_KEY_ID ASC_KEY_CONTENT APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::missing secrets:$missing"
+            exit 1
+          fi
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          want="${{ inputs.xcode_version }}"
+          if [ -n "$want" ]; then
+            app=$(ls -d "/Applications/Xcode_${want}"*.app 2>/dev/null | head -1 || true)
+            [ -n "$app" ] || { echo "::error::Xcode $want not installed"; exit 1; }
+            sudo xcode-select -s "$app"
+          fi
+          xcodebuild -version
+
+      - uses: ./.github/actions/setup-flutter
+        with:
+          version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Restore App Store Connect key
+        run: |
+          set -euo pipefail
+          mkdir -p "$API_PRIVATE_KEYS_DIR"
+          printf '%s' "$ASC_KEY_CONTENT" | base64 --decode > "$API_PRIVATE_KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$API_PRIVATE_KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8"
+          # 私钥不能进 workspace，否则会被 artifact 通配符一起上传
+          echo "key written to $API_PRIVATE_KEYS_DIR"
+
+      - name: Prepare Xcode configuration
+        working-directory: bili-lite/app
+        run: |
+          set -euo pipefail
+          flutter pub get
+          # 先生成 xcconfig，再由 xcodebuild 自行 archive
+          flutter build ios --release --no-codesign \
+            --build-number="${GITHUB_RUN_NUMBER}" --config-only
+          cd ios && pod install && cd ..
+
+      - name: Archive with automatic signing
+        working-directory: bili-lite/app
+        env:
+          KEY_PATH: ${{ runner.temp }}/asc_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/ios/BiliLite.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            | xcbeautify || exit ${PIPESTATUS[0]}
+
+      - name: Export IPA
+        run: |
+          set -euo pipefail
+          cp bili-lite/app/ios/ExportOptions.plist ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Set :teamID $APPLE_TEAM_ID" ExportOptions.plist
+          mkdir -p build/ios/export
+          xcodebuild -exportArchive \
+            -archivePath bili-lite/app/build/ios/BiliLite.xcarchive \
+            -exportPath build/ios/export \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$API_PRIVATE_KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            | xcbeautify || exit ${PIPESTATUS[0]}
+          ls -la build/ios/export/
+
+      - name: Upload to TestFlight
+        run: |
+          set -euo pipefail
+          ipa=$(ls build/ios/export/*.ipa | head -1)
+          echo "uploading $ipa"
+          xcrun altool --upload-app -f "$ipa" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Cleanup private key
+        if: always()
+        run: rm -rf "$API_PRIVATE_KEYS_DIR"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-signed-ipa
+          path: build/ios/export/*.ipa
           if-no-files-found: warn
           retention-days: 30
 
