@@ -94,6 +94,27 @@ flutter build web
 只有连不上时才降级到内置的 `assets/offline.json`。真机调试若想改回走本机 BFF，
 用 `flutter run --dart-define=BFF_URL=http://<电脑IP>:8787`；完全禁用联网则加 `--dart-define=OFFLINE=1`。
 
+### 直接下载已构建好的安装包
+
+所有二进制统一由 GitHub Actions 编译（`.github/workflows/build-installers.yml`），
+产物直接发布到仓库 Release，本地不需要装 Android SDK / MSVC：
+
+| 平台 | Release 资产 |
+| --- | --- |
+| Android | `BiliLite-1.2.0-Android.apk` |
+| Windows | `BiliLite-1.2.0-Windows-Setup.exe` |
+| Web + BFF | `bili-lite-web-v1.2.0.tar.gz` |
+
+手动触发一次全平台构建：
+
+```bash
+gh workflow run build-installers.yml -f release_tag=bili-lite-v1.2.0 -f publish=true
+```
+
+Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入库），可覆盖升级。
+iOS IPA 需 macOS + Apple 证书，用 `scripts/build-ios-local.sh` 在本机构建，
+详见[多端构建指南](docs/多端构建.md)。
+
 ---
 
 ## 功能

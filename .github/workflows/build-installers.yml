@@ -59,10 +59,6 @@ jobs:
           java-version: "11"
           cache: gradle
 
-      - uses: actions/setup-gradle@v3
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
       - uses: ./.github/actions/setup-flutter
         with:
           version: ${{ env.FLUTTER_VERSION }}
@@ -207,14 +203,17 @@ jobs:
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path "installers" | Out-Null
           $out = Join-Path $env:GITHUB_WORKSPACE "installers"
+          # 版本号从 pubspec 读取，避免 Inno Setup 脚本里的版本与工程脱节。
+          $ver = (Select-String -Path "bili-lite\app\pubspec.yaml" -Pattern '^version:\s*([0-9]+\.[0-9]+\.[0-9]+)').Matches[0].Groups[1].Value
+          Write-Host "AppVersion: $ver"
           $iss = @"
           [Setup]
           AppName=Bili Lite
-          AppVersion=1.2.0
+          AppVersion=$ver
           AppPublisher=Bili Lite
           DefaultDirName={autopf}\Bili Lite
           DefaultGroupName=Bili Lite
-          OutputBaseFilename=BiliLite-1.2.0-Windows-Setup
+          OutputBaseFilename=BiliLite-$ver-Windows-Setup
           OutputDir=$out
           Compression=lzma2/max
           SolidCompression=yes
@@ -260,7 +259,8 @@ jobs:
           $ErrorActionPreference = "Stop"
           $ver = (Select-String -Path "bili-lite\app\pubspec.yaml" -Pattern '^version:\s*([0-9]+\.[0-9]+\.[0-9]+)').Matches[0].Groups[1].Value
           $asset = "BiliLite-$ver-Windows-Setup.exe"
-          Copy-Item "installers\BiliLite-1.2.0-Windows-Setup.exe" "installers\$asset" -Force
+          # Inno Setup 已按版本号命名产物，无需再做一次拷贝（同名拷贝会报 "cannot overwrite with itself"）。
+          if (-not (Test-Path "installers\$asset")) { throw "installer not found: installers\$asset" }
           gh release upload $env:RELEASE_TAG "installers\$asset" --clobber --repo $env:GITHUB_REPOSITORY
           Write-Host "已发布 $asset 到 $env:RELEASE_TAG"
 
@@ -300,7 +300,6 @@ jobs:
           mkdir -p installers
           tar -czf "installers/bili-lite-web-v${version}.tar.gz" -C staging bili-lite-web
           (cd staging && zip -qr "../installers/bili-lite-web-v${version}.zip" bili-lite-web)
-          echo "ASSET_NAME=bili-lite-web-v${version}.tar.gz" >> "$GITHUB_ENV"
           ls -la installers/
 
       - uses: actions/upload-artifact@v4
@@ -316,7 +315,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release upload "$RELEASE_TAG" "installers/${{ env.ASSET_NAME }}" \
+          gh release upload "$RELEASE_TAG" installers/bili-lite-web-v*.tar.gz installers/bili-lite-web-v*.zip \
             --clobber --repo "$GITHUB_REPOSITORY"
 
   ios:
