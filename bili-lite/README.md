@@ -103,18 +103,18 @@ flutter build web
 
 | 平台 | Release 资产 |
 | --- | --- |
-| Android | `BiliLite-1.4.0-Android.apk` |
-| Windows | `BiliLite-1.4.0-Windows-Setup.exe` |
-| Web + BFF | `bili-lite-web-v1.4.0.tar.gz` / `.zip` |
-| iOS | `BiliLite-1.4.0-UNSIGNED.ipa`（编译验证）、`BiliLite-1.4.0-iOS-ADHOC.ipa`（ad-hoc 签名） |
-| 源码 | `bili-lite-v1.4.0-src.tar.gz` / `.zip` |
+| Android | `BiliLite-1.5.0-Android.apk` |
+| Windows | `BiliLite-1.5.0-Windows-Setup.exe` |
+| Web + BFF | `bili-lite-web-v1.5.0.tar.gz` / `.zip` |
+| iOS | `BiliLite-1.5.0-UNSIGNED.ipa`（编译验证）、`BiliLite-1.5.0-iOS-ADHOC.ipa`（ad-hoc 签名） |
+| 源码 | `bili-lite-v1.5.0-src.tar.gz` / `.zip` |
 
-最新发行版：[bili-lite-v1.4.0](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v1.4.0)
+最新发行版：[bili-lite-v1.5.0](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v1.5.0)
 
 手动触发一次全平台构建：
 
 ```bash
-gh workflow run build-installers.yml -f release_tag=bili-lite-v1.4.0 -f publish=true -f run_ios=true
+gh workflow run build-installers.yml -f release_tag=bili-lite-v1.5.0 -f publish=true -f run_ios=true
 ```
 
 Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入库），可覆盖升级。
@@ -122,7 +122,7 @@ Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入
 iOS 需要加 `-f run_ios=true` 才会构建（macOS runner）：
 
 ```bash
-gh workflow run build-installers.yml -f release_tag=bili-lite-v1.4.0 -f publish=true -f run_ios=true
+gh workflow run build-installers.yml -f release_tag=bili-lite-v1.5.0 -f publish=true -f run_ios=true
 ```
 
 产出 `UNSIGNED.ipa`（编译验证）与 `iOS-ADHOC.ipa`（ad-hoc 自签名，侧载工具可重签）。
