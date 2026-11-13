@@ -84,7 +84,7 @@ gh secret set APP_STORE_CONNECT_KEY_CONTENT --repo llovepeaches/bili-lite \
 ```bash
 gh workflow run build-installers.yml \
   -f flutter_version=3.24.4 \
-  -f release_tag=bili-lite-v1.3.0 \
+  -f release_tag=bili-lite-v1.4.0 \
   -f publish=true \
   -f run_ios=true \
   -f publish_testflight=true
