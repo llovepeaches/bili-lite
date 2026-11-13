@@ -17,7 +17,17 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const { biliGet, cached, initIdentity, fetchImage, UpstreamError, cache } = require('./bili');
+const {
+  biliGet,
+  biliGetBinary,
+  cached,
+  initIdentity,
+  fetchImage,
+  fetchStream,
+  resolvePlayStreamUrl,
+  UpstreamError,
+  cache,
+} = require('./bili');
 const N = require('./normalize');
 const mock = require('./mock');
 const oauth = require('./oauth');
@@ -36,6 +46,8 @@ const TTL = {
   search: 2 * 60_000,
   video: 10 * 60_000,
   reply: 60_000,
+  playurl: 5 * 60_000,
+  danmaku: 5 * 60_000,
 };
 
 /** 排行榜分区（rid = B 站分区 id） */
@@ -209,6 +221,8 @@ const endpoints = {
   async '/api/feed'(url) {
     const ps = Math.min(40, Math.max(1, Number(url.searchParams.get('ps')) || 20));
     const freshIdx = Number(url.searchParams.get('fresh_idx')) || 1;
+    // 用户手动刷新 / 换一批时绕过缓存，否则 60 秒 TTL 内拿到的是同一批数据。
+    const skipCache = url.searchParams.get('skip_cache') === '1';
     if (MOCK_MODE) {
       return { data: mock.feed(), meta: { source: 'mock' } };
     }
@@ -222,7 +236,8 @@ const endpoints = {
           fresh_idx: freshIdx,
           fresh_idx_1h: freshIdx,
         }).then(N.normalizeFeed),
-      mock.feed()
+      mock.feed(),
+      skipCache
     );
     return { result };
   },
@@ -230,6 +245,7 @@ const endpoints = {
   /** 全站 / 分区排行榜 */
   async '/api/rank'(url) {
     const rid = Number(url.searchParams.get('rid')) || 0;
+    const skipCache = url.searchParams.get('skip_cache') === '1';
     if (MOCK_MODE) {
       return { data: mock.rank(), meta: { source: 'mock' } };
     }
@@ -238,7 +254,8 @@ const endpoints = {
       TTL.rank,
       () =>
         biliGet('/x/web-interface/ranking/v2', { rid, type: 'all' }).then(N.normalizeRank),
-      mock.rank()
+      mock.rank(),
+      skipCache
     );
     return { result };
   },
@@ -247,6 +264,7 @@ const endpoints = {
   async '/api/popular'(url) {
     const pn = Math.min(10, Math.max(1, Number(url.searchParams.get('pn')) || 1));
     const ps = Math.min(50, Math.max(1, Number(url.searchParams.get('ps')) || 20));
+    const skipCache = url.searchParams.get('skip_cache') === '1';
     if (MOCK_MODE) {
       return { data: mock.popular(), meta: { source: 'mock' } };
     }
@@ -254,7 +272,8 @@ const endpoints = {
       `popular:${pn}:${ps}`,
       TTL.popular,
       () => biliGet('/x/web-interface/popular', { pn, ps }).then(N.normalizePopular),
-      mock.popular()
+      mock.popular(),
+      skipCache
     );
     return { result };
   },
@@ -300,6 +319,68 @@ const endpoints = {
       () =>
         biliGet('/x/web-interface/view', bvid ? { bvid } : { aid }).then(N.normalizeView),
       mock.detail(bvid)
+    );
+    return { result };
+  },
+
+  /** 播放地址（应用内播放用） */
+  async '/api/playurl'(url) {
+    const bvid = (url.searchParams.get('bvid') || '').trim();
+    const cid = (url.searchParams.get('cid') || '').trim();
+    const qn = Math.min(120, Math.max(16, Number(url.searchParams.get('qn')) || 64));
+    if (!bvid || !cid) {
+      throw new UpstreamError('缺少 bvid 或 cid 参数', 400);
+    }
+    if (MOCK_MODE) {
+      return { data: { url: '', quality: 0, qualityLabel: '离线快照', list: [] }, meta: { source: 'mock' } };
+    }
+    const result = await cached(
+      `playurl:${bvid}:${cid}:${qn}`,
+      TTL.playurl,
+      () =>
+        biliGet('/x/player/playurl', {
+          bvid,
+          cid,
+          qn,
+          // fnval=1 只返回 durl（单文件 mp4），不要 DASH。
+          // DASH 是音视频分离的 m4s，需要合流器才能播，六端行为不一致。
+          fnval: 1,
+          fourk: 1,
+          platform: 'html5',
+          high_quality: 1,
+        }).then(N.normalizePlayurl),
+      null
+    );
+    return { result };
+  },
+
+  /** 弹幕列表（应用内播放器叠加层用） */
+  async '/api/danmaku'(url) {
+    const oid = (url.searchParams.get('oid') || url.searchParams.get('cid') || '').trim();
+    if (!oid) {
+      throw new UpstreamError('缺少 oid 参数', 400);
+    }
+    if (MOCK_MODE) {
+      return { data: { count: 0, list: [] }, meta: { source: 'mock' } };
+    }
+    const result = await cached(
+      `danmaku:${oid}`,
+      TTL.danmaku,
+      async () => {
+        const raw = await biliGetBinary('/x/v1/dm/list.so', { oid });
+        // 上游返回的是 deflate(raw) 压缩的 XML。
+        const zlib = require('zlib');
+        let xml;
+        try {
+          xml = zlib.inflateRawSync(raw).toString('utf8');
+        } catch (_) {
+          // 少数情况下上游会直接返回未压缩的 XML。
+          xml = raw.toString('utf8');
+        }
+        const list = N.parseDanmakuXml(xml);
+        return { count: list.length, list };
+      },
+      null
     );
     return { result };
   },
@@ -359,6 +440,52 @@ const server = http.createServer(async (req, res) => {
       res.end(body);
     } catch (err) {
       sendJson(res, err.status || 502, { code: err.status || 502, message: err.message, data: null });
+    }
+    return;
+  }
+
+  // 视频流代理：二进制 + 流式响应，必须在通用 JSON 分支之前处理。
+  if (pathname === '/api/stream') {
+    const bvid = (parsed.searchParams.get('bvid') || '').trim();
+    const cid = (parsed.searchParams.get('cid') || '').trim();
+    const qn = Math.min(120, Math.max(16, Number(parsed.searchParams.get('qn')) || 64));
+    if (!bvid || !cid) {
+      sendJson(res, 400, { code: 400, message: '缺少 bvid 或 cid 参数', data: null });
+      return;
+    }
+    try {
+      // 直链本身有有效期（十几分钟），这里缓存 5 分钟足够覆盖一次观看。
+      const streamUrl = await cached(
+        `streamurl:${bvid}:${cid}:${qn}`,
+        TTL.playurl,
+        () => resolvePlayStreamUrl(bvid, cid, qn),
+        null
+      );
+      const up = await fetchStream(streamUrl.value, req.headers.range);
+      cors(res);
+      res.writeHead(up.status, up.headers);
+      if (up.stream) {
+        const reader = up.stream.getReader();
+        // 客户端断开时立刻停掉上游，避免带宽空转。
+        req.on('close', () => {
+          reader.cancel().catch(() => {});
+        });
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.write(Buffer.from(value))) {
+            await new Promise((resolve) => res.once('drain', resolve));
+          }
+        }
+        res.end();
+      } else {
+        res.end();
+      }
+      console.log(`  GET ${pathname} → ${up.status}`);
+    } catch (err) {
+      const status = err.status || 502;
+      sendJson(res, status, { code: status, message: err.message || '上游错误', data: null });
+      console.log(`  GET ${pathname} → ${status} ${err.message}`);
     }
     return;
   }

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../core/navigation.dart';
+import '../../core/tokens.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../state/globals.dart';
 import '../../state/library_state.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../account/account_entry.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/page_header_card.dart';
 import '../../widgets/state_views.dart';
@@ -131,23 +133,35 @@ class _LibraryPageState extends State<LibraryPage>
       onRefresh: () => library.load(),
       onTap: _openDetail,
       onLongPress: (video) => _confirmRemove(kind, video),
-      header: PageHeaderCard(
-        title: LibraryController.titles[_controller.active],
-        count: '${videos.length} 条',
-        subtitle: LibraryController.hints[_controller.active],
-        trailing: videos.isEmpty
-            ? null
-            : GlassChip(
-                label: '清空',
-                icon: Icons.delete_outline_rounded,
-                tint: AppColors.pink,
-                radius: 12,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                labelStyle:
-                    const TextStyle(fontSize: 12, color: AppColors.pink),
-                onTap: () => _confirmClear(kind),
-              ),
+      header: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // 登录入口前置：账号卡片原本只藏在设置页最底部，
+          // 用户在「我的」页看不到，等于没有登录入口。
+          const Padding(
+            padding: EdgeInsets.fromLTRB(
+                AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
+            child: AccountEntry(),
+          ),
+          PageHeaderCard(
+            title: LibraryController.titles[_controller.active],
+            count: '${videos.length} 条',
+            subtitle: LibraryController.hints[_controller.active],
+            trailing: videos.isEmpty
+                ? null
+                : GlassChip(
+                    label: '清空',
+                    icon: Icons.delete_outline_rounded,
+                    tint: AppColors.pink,
+                    radius: 12,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                    labelStyle:
+                        const TextStyle(fontSize: 12, color: AppColors.pink),
+                    onTap: () => _confirmClear(kind),
+                  ),
+          ),
+        ],
       ),
       empty: EmptyView(
         icon: LibraryController.icons[_controller.active],

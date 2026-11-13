@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../core/api_paths.dart';
+import 'inflate.dart';
 
 /// 一次直连请求的结果。`data` 与 BFF `/api/*` 的 `data` 字段完全同构，
 /// 因此 repository 里的解析函数可以原样复用。
@@ -52,6 +53,12 @@ class BiliDirect {
 
   int get cacheEntries => _cache.length;
   String get identity => _identity;
+
+  /// 当前访客身份的 Cookie 头值。
+  ///
+  /// 播放器（video_player / ExoPlayer）直连 B 站 CDN 时需要它：
+  /// CDN 除了 referer 还会校验访客身份，缺了就直接 403。
+  String get cookieHeader => _cookie;
 
   /// 轻量探活：给设置页判断是否真的连上了 B 站。
   Future<bool> probe() async {
@@ -131,11 +138,12 @@ class BiliDirect {
   Future<DirectResult> _cached(
     String key,
     int ttlSeconds,
-    Future<dynamic> Function() producer,
-  ) async {
+    Future<dynamic> Function() producer, {
+    bool skipCache = false,
+  }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final hit = _cache[key];
-    if (hit != null && hit.expireAt > now) {
+    if (!skipCache && hit != null && hit.expireAt > now) {
       return DirectResult(hit.value, 'cache');
     }
     try {
@@ -152,12 +160,14 @@ class BiliDirect {
   Future<DirectResult> fetch(String path, Map<String, String> q) async {
     switch (path) {
       case ApiPaths.feed:
-        return _cached('feed:${q['ps']}:${q['fresh_idx']}', 60, () => _feed(q));
+        return _cached('feed:${q['ps']}:${q['fresh_idx']}', 60, () => _feed(q),
+            skipCache: q['skip_cache'] == '1');
       case ApiPaths.rank:
-        return _cached('rank:${q['rid']}', 300, () => _rank(q));
+        return _cached('rank:${q['rid']}', 300, () => _rank(q),
+            skipCache: q['skip_cache'] == '1');
       case ApiPaths.popular:
-        return _cached('popular:${q['pn']}:${q['ps']}', 120,
-            () => _popular(q));
+        return _cached('popular:${q['pn']}:${q['ps']}', 120, () => _popular(q),
+            skipCache: q['skip_cache'] == '1');
       case ApiPaths.search:
         final keyword = (q['keyword'] ?? '').trim();
         if (keyword.isEmpty) {
@@ -174,12 +184,125 @@ class BiliDirect {
       case ApiPaths.reply:
         return _cached('reply:${q['aid']}:${q['pn']}:${q['ps']}:${q['sort']}',
             120, () => _reply(q));
+      case ApiPaths.playurl:
+        return _cached(
+            'playurl:${q['bvid']}:${q['cid']}:${q['qn']}', 300, () => _playurl(q));
+      case ApiPaths.danmaku:
+        return _cached('danmaku:${q['oid']}', 300, () => _danmaku(q));
       default:
         throw ArgumentError('未知直连接口 $path');
     }
   }
 
   /* --------------------------- 上游适配器 --------------------------- */
+
+  /// 播放地址（应用内播放）。
+  ///
+  /// 与 BFF 的 `normalizePlayurl` 保持同一套字段，客户端解析函数可以复用。
+  Future<Map<String, dynamic>> _playurl(Map<String, String> q) async {
+    final data = await _getJson('/x/player/playurl', <String, String>{
+      'bvid': q['bvid'] ?? '',
+      'cid': q['cid'] ?? '',
+      'qn': q['qn'] ?? '64',
+      // fnval=1 只返回 durl（单文件 mp4）；DASH 需要合流器，放弃。
+      'fnval': '1',
+      'fourk': '1',
+      'platform': 'html5',
+      'high_quality': '1',
+    });
+    final durl = data['durl'];
+    final first = (durl is List && durl.isNotEmpty && durl.first is Map)
+        ? Map<String, dynamic>.from(durl.first as Map)
+        : <String, dynamic>{};
+    final quality = _int(data['quality']);
+    return <String, dynamic>{
+      'url': _string(first['url']),
+      'backupUrl': _string(first['backup_url']),
+      'size': _int(first['size']),
+      'quality': quality,
+      'acceptQuality': _list(data['accept_quality']).map(_int).toList(),
+      'acceptDescription': _list(data['accept_description'])
+          .map((e) => e is Map ? _string(e['value_desc']) : _string(e))
+          .toList(),
+      'format': _string(data['format']),
+      'timelength': _int(data['timelength']),
+      'qualityLabel': _qualityLabel(quality, data),
+    };
+  }
+
+  /// 弹幕列表。
+  ///
+  /// 上游返回的是 deflate(raw) 压缩的 XML，需要先解压再解析。
+  Future<Map<String, dynamic>> _danmaku(Map<String, String> q) async {
+    final oid = q['oid'] ?? q['cid'] ?? '';
+    final uri = Uri.https(host, '/x/v1/dm/list.so', <String, String>{'oid': oid});
+    final res = await _client
+        .get(uri, headers: _headers(_cookie))
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) {
+      throw StateError('弹幕接口返回 HTTP ${res.statusCode}');
+    }
+    final xml = inflateRawToString(res.bodyBytes);
+    final list = _parseDanmakuXml(xml);
+    return <String, dynamic>{'count': list.length, 'list': list};
+  }
+
+  /// 解析弹幕 XML。
+  ///
+  /// 形如 `<d p="时间(秒),模式,字号,颜色,发送时间,随机种子,用户ID,行ID">文本</d>`。
+  static List<Map<String, dynamic>> _parseDanmakuXml(String xml) {
+    final out = <Map<String, dynamic>>[];
+    final reg = RegExp(r'<d\s+p="([^"]*)"[^>]*>([\s\S]*?)</d>');
+    for (final m in reg.allMatches(xml)) {
+      final fields = m.group(1)!.split(',');
+      if (fields.length < 4) continue;
+      final text = _decodeXml(m.group(2) ?? '');
+      if (text.isEmpty) continue;
+      out.add(<String, dynamic>{
+        'time': (_toDouble(fields[0]) * 1000).round(),
+        'mode': _int(fields[1]),
+        'size': _int(fields[2]),
+        'color': _int(fields[3]),
+        'text': text,
+      });
+    }
+    return out;
+  }
+
+  static String _decodeXml(String s) => s
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&apos;', "'")
+      .replaceAll('&amp;', '&')
+      .trim();
+
+  static double _toDouble(String s) {
+    final v = double.tryParse(s.trim());
+    return v ?? 0;
+  }
+
+  static String _qualityLabel(int quality, Map<String, dynamic> data) {
+    const names = <int, String>{
+      120: '4K 超清',
+      116: '1080P 60帧',
+      112: '1080P 高码率',
+      80: '1080P',
+      74: '720P 60帧',
+      64: '720P',
+      32: '480P',
+      16: '360P 流畅',
+    };
+    final hit = names[quality];
+    if (hit != null) return hit;
+    for (final raw in _list(data['accept_description'])) {
+      if (raw is Map && _int(raw['value']) == quality) {
+        final desc = _string(raw['value_desc'] ?? raw['desc']);
+        if (desc.isNotEmpty) return desc;
+      }
+    }
+    return '$quality';
+  }
 
   Future<List<dynamic>> _feed(Map<String, String> q) async {
     final idx = q['fresh_idx'] ?? '1';
@@ -502,17 +625,19 @@ class BiliDirect {
     return h > 0 ? '$h:${pad(m)}:${pad(sec)}' : '${pad(m)}:${pad(sec)}';
   }
 
-  String _string(dynamic v) => v == null ? '' : v.toString();
+  // 这几个基础转换做成 static：新增的弹幕解析与清晰度映射都是静态辅助方法，
+  // 需要复用它们。static 成员同样可以在实例方法里直接调用。
+  static String _string(dynamic v) => v == null ? '' : v.toString();
 
-  int _int(dynamic v) {
+  static int _int(dynamic v) {
     if (v is int) return v;
     if (v is double) return v.toInt();
     return int.tryParse(_string(v)) ?? 0;
   }
 
-  Map<String, dynamic> _map(dynamic v) =>
+  static Map<String, dynamic> _map(dynamic v) =>
       v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 
-  List<dynamic> _list(dynamic v) =>
+  static List<dynamic> _list(dynamic v) =>
       v is List ? List<dynamic>.from(v) : <dynamic>[];
 }

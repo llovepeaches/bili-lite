@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/config.dart';
 import '../../core/navigation.dart';
 import '../../core/partitions.dart';
 import '../../core/responsive.dart';
@@ -7,6 +8,7 @@ import '../../core/theme.dart';
 import '../../core/tokens.dart';
 import '../../data/models.dart';
 import '../../state/globals.dart';
+import '../account/account_entry.dart';
 import '../../widgets/app_logo.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/page_header_card.dart';
@@ -39,6 +41,11 @@ class _HomeViewState extends State<HomeView>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.load(HomeChannel.recommended);
     });
+  }
+
+  /// 打开账号面板（登录 / 授权码 / 退出）。
+  void _openAccount() {
+    showAccountSheet(context);
   }
 
   void _onTabChanged() {
@@ -81,6 +88,17 @@ class _HomeViewState extends State<HomeView>
                   animation: _controller,
                   builder: (_, __) => SourceBadge(
                       source: _controller.sourceOf(_controller.channel)),
+                ),
+              ),
+              // 登录入口前置：顶栏常驻一个账号按钮，
+              // 未登录时显示「登录」图标，已登录时显示头像。
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: GlassPill(
+                  radius: 12,
+                  padding: const EdgeInsets.all(7),
+                  onTap: _openAccount,
+                  child: const _AccountButton(),
                 ),
               ),
               Padding(
@@ -233,6 +251,36 @@ class _HomeViewState extends State<HomeView>
           );
         },
       ),
+    );
+  }
+}
+
+/// 顶栏账号按钮：未登录显示登录图标，已登录显示头像。
+class _AccountButton extends StatelessWidget {
+  const _AccountButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: authSession,
+      builder: (context, _) {
+        final s = authSession;
+        final face = s.user?.face ?? '';
+        if (face.isEmpty) {
+          // 登录后即使没有头像，也要和「未登录」区分开：
+          // 未登录是登录箭头，已登录是人形图标。
+          return Icon(
+            s.signedIn ? Icons.person_rounded : Icons.login_rounded,
+            size: 18,
+            color: AppColors.pink,
+          );
+        }
+        return CircleAvatar(
+          radius: 9,
+          backgroundColor: AppColors.pink.withOpacity(0.2),
+          backgroundImage: NetworkImage(ApiConfig.image(face)),
+        );
+      },
     );
   }
 }

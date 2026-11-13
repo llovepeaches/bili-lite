@@ -30,6 +30,12 @@ class ApiPaths {
   static const String video = '/api/video';
   static const String reply = '/api/reply';
 
+  /// 应用内播放：解析 mp4 直链（fnval=1 的 durl）。
+  static const String playurl = '/api/playurl';
+
+  /// 弹幕：上游是 deflate 压缩的 XML，服务端解压后转成 JSON。
+  static const String danmaku = '/api/danmaku';
+
   static const Map<String, String> endpoints = <String, String>{
     'health': health,
     'meta': meta,
@@ -39,6 +45,8 @@ class ApiPaths {
     'search': search,
     'video': video,
     'reply': reply,
+    'playurl': playurl,
+    'danmaku': danmaku,
   };
 
   /// 取接口路径。未知 key 返回空串（调用方不会用到）。
