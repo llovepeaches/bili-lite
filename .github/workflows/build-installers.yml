@@ -449,8 +449,8 @@ jobs:
       ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       ASC_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_KEY_CONTENT }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      # altool 按文件名在 API_PRIVATE_KEYS_DIR 里找 AuthKey_<KeyID>.p8
-      API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/asc_keys
+      # 注意：runner 上下文只在 step 级可用，API_PRIVATE_KEYS_DIR 在各步骤里
+      # 用 $RUNNER_TEMP 现场拼出，altool 会按文件名在该目录里找 AuthKey_<KeyID>.p8。
     steps:
       - uses: actions/checkout@v4
 
@@ -484,6 +484,7 @@ jobs:
       - name: Restore App Store Connect key
         run: |
           set -euo pipefail
+          export API_PRIVATE_KEYS_DIR="$RUNNER_TEMP/asc_keys"
           mkdir -p "$API_PRIVATE_KEYS_DIR"
           printf '%s' "$ASC_KEY_CONTENT" | base64 --decode > "$API_PRIVATE_KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8"
           chmod 600 "$API_PRIVATE_KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8"
@@ -531,7 +532,7 @@ jobs:
             -exportPath build/ios/export \
             -exportOptionsPlist ExportOptions.plist \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$API_PRIVATE_KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyPath "$RUNNER_TEMP/asc_keys/AuthKey_${ASC_KEY_ID}.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             | xcbeautify || exit ${PIPESTATUS[0]}
@@ -540,6 +541,7 @@ jobs:
       - name: Upload to TestFlight
         run: |
           set -euo pipefail
+          export API_PRIVATE_KEYS_DIR="$RUNNER_TEMP/asc_keys"
           ipa=$(ls build/ios/export/*.ipa | head -1)
           echo "uploading $ipa"
           xcrun altool --upload-app -f "$ipa" -t ios \
@@ -547,7 +549,7 @@ jobs:
 
       - name: Cleanup private key
         if: always()
-        run: rm -rf "$API_PRIVATE_KEYS_DIR"
+        run: rm -rf "$RUNNER_TEMP/asc_keys"
 
       - uses: actions/upload-artifact@v4
         with:
