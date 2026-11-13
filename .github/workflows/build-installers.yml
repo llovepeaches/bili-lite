@@ -114,7 +114,7 @@ jobs:
             echo "Release $RELEASE_TAG 已存在"
             exit 0
           fi
-          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | sed -n "1p")
           gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --title "Bili Lite v${version} · Android / Windows / Web" \
             --notes "Bili Lite v${version}：Android APK、Windows 安装程序、Web 静态产物与源码归档。由 GitHub Actions 自动构建。" \
@@ -135,7 +135,7 @@ jobs:
         id: ver
         run: |
           set -euo pipefail
-          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | sed -n "1p")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "版本: $version"
 
@@ -156,7 +156,9 @@ jobs:
             HEAD bili-lite ':(exclude)bili-lite/docs/preview'
           ls -la installers/
           echo "--- 内容抽查 ---"
-          tar -tzf "installers/bili-lite-v${version}-src.tar.gz" | head -5
+          # 注意：不要用 `| head`，head 提前关闭管道会让 tar 收到 SIGPIPE，
+          # 在 set -o pipefail 下整步以非零码结束。
+          tar -tzf "installers/bili-lite-v${version}-src.tar.gz" | sed -n "1,5p"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -201,7 +203,7 @@ jobs:
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           # runner 预装了 Android SDK，但 sdkmanager 不在 PATH 里，需要自己定位 cmdline-tools。
           if ! command -v sdkmanager >/dev/null 2>&1; then
-            sm=$(find "$ANDROID_HOME/cmdline-tools" "$ANDROID_HOME/tools" -maxdepth 4 -name sdkmanager -type f 2>/dev/null | head -1 || true)
+            sm=$(find "$ANDROID_HOME/cmdline-tools" "$ANDROID_HOME/tools" -maxdepth 4 -name sdkmanager -type f 2>/dev/null | sed -n "1p" || true)
             if [ -n "$sm" ]; then
               export PATH="$(dirname "$sm"):$PATH"
             fi
@@ -222,7 +224,7 @@ jobs:
         run: |
           set -euo pipefail
           flutter config --android-sdk "$ANDROID_HOME"
-          flutter doctor -v 2>&1 | grep -iE "android toolchain|android sdk|✗|!" | head -20 || true
+          flutter doctor -v 2>&1 | grep -iE "android toolchain|android sdk|✗|!" | sed -n "1,20p" || true
 
       - name: Restore release signing keystore
         run: |
@@ -267,14 +269,14 @@ jobs:
           apk="build/app/outputs/flutter-apk/app-release.apk"
           bt=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
           echo "build-tools: $bt"
-          "$bt/apksigner" verify --print-certs "$apk" | head -6
-          "$bt/aapt" dump badging "$apk" | grep -E "^package:|^native-code" | head -4
+          "$bt/apksigner" verify --print-certs "$apk" | sed -n "1,6p"
+          "$bt/aapt" dump badging "$apk" | grep -E "^package:|^native-code" | sed -n "1,4p"
           unzip -l "$apk" | grep -E "offline.json" || true
 
       - name: Stage asset
         run: |
           set -euo pipefail
-          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | sed -n "1p")
           mkdir -p installers
           cp bili-lite/app/build/app/outputs/flutter-apk/app-release.apk "installers/BiliLite-${version}-Android.apk"
           echo "ASSET_NAME=BiliLite-${version}-Android.apk" >> "$GITHUB_ENV"
@@ -447,7 +449,7 @@ jobs:
       - name: Package web + BFF
         run: |
           set -euo pipefail
-          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | sed -n "1p")
           rm -rf staging
           mkdir -p staging/bili-lite-web
           cp -R bili-lite/app/build/web staging/bili-lite-web/web
@@ -503,7 +505,7 @@ jobs:
           set -euo pipefail
           want="${{ inputs.xcode_version }}"
           if [ -n "$want" ]; then
-            app=$(ls -d "/Applications/Xcode_${want}"*.app 2>/dev/null | head -1 || true)
+            app=$(ls -d "/Applications/Xcode_${want}"*.app 2>/dev/null | sed -n "1p" || true)
             if [ -z "$app" ]; then
               echo "::error::Xcode $want not installed on this image"
               ls -d /Applications/Xcode*.app
@@ -527,7 +529,7 @@ jobs:
 
       - name: Resolve app version
         run: |
-          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | sed -n "1p")
           echo "APP_VERSION=$version" >> "$GITHUB_ENV"
           echo "版本: $version"
 
@@ -600,7 +602,7 @@ jobs:
           set -euo pipefail
           want="${{ inputs.xcode_version }}"
           if [ -n "$want" ]; then
-            app=$(ls -d "/Applications/Xcode_${want}"*.app 2>/dev/null | head -1 || true)
+            app=$(ls -d "/Applications/Xcode_${want}"*.app 2>/dev/null | sed -n "1p" || true)
             [ -n "$app" ] || { echo "::error::Xcode $want not installed"; exit 1; }
             sudo xcode-select -s "$app"
           fi
@@ -671,7 +673,7 @@ jobs:
         run: |
           set -euo pipefail
           export API_PRIVATE_KEYS_DIR="$RUNNER_TEMP/asc_keys"
-          ipa=$(ls build/ios/export/*.ipa | head -1)
+          ipa=$(ls build/ios/export/*.ipa | sed -n "1p")
           echo "uploading $ipa"
           xcrun altool --upload-app -f "$ipa" -t ios \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
