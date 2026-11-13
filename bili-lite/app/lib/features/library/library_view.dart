@@ -11,24 +11,11 @@ import '../../widgets/glass.dart';
 import '../../widgets/page_header_card.dart';
 import '../../widgets/state_views.dart';
 import '../../widgets/video_grid.dart';
+import 'library_controller.dart';
 
-const List<String> _tabLabels = <String>['收藏', '历史', '稍后再看'];
-const List<IconData> _tabIcons = <IconData>[
-  Icons.favorite_border_rounded,
-  Icons.history_rounded,
-  Icons.watch_later_outlined,
-];
-const List<String> _tabTitles = <String>[
-  '收藏的视频',
-  '观看历史',
-  '稍后再看',
-];
-const List<String> _tabHints = <String>[
-  '长按卡片可移除，数据仅保存在本机',
-  '自动记录打开过的视频，最多保留 200 条',
-  '想看但暂时没空？先存到这里',
-];
-
+/// 「我的」页（视图层）：收藏 / 观看历史 / 稍后再看。
+///
+/// 三个 tab 共用一套列表逻辑，元数据与切换状态见 [LibraryController]。
 class LibraryPage extends StatefulWidget {
   const LibraryPage({Key? key}) : super(key: key);
 
@@ -39,15 +26,16 @@ class LibraryPage extends StatefulWidget {
 class _LibraryPageState extends State<LibraryPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  int _active = 0;
+  late final LibraryController _controller;
 
   @override
   void initState() {
     super.initState();
+    _controller = LibraryController();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
-      if (!_tabController.indexIsChanging && _tabController.index != _active) {
-        setState(() => _active = _tabController.index);
+      if (!_tabController.indexIsChanging) {
+        _controller.select(_tabController.index);
       }
     });
   }
@@ -55,10 +43,9 @@ class _LibraryPageState extends State<LibraryPage>
   @override
   void dispose() {
     _tabController.dispose();
+    _controller.dispose();
     super.dispose();
   }
-
-  LibraryKind get _kind => LibraryKind.values[_active];
 
   void _openDetail(Video video) {
     openVideoDetail(context, video);
@@ -68,7 +55,7 @@ class _LibraryPageState extends State<LibraryPage>
     final ok = await showConfirmDialog(
       context,
       title: '清空列表？',
-      message: '将删除${_tabLabels[LibraryKind.values.indexOf(kind)]}中的全部 '
+      message: '将删除${LibraryController.labels[LibraryKind.values.indexOf(kind)]}中的全部 '
           '${library.count(kind)} 条记录，此操作不可撤销。',
       confirmLabel: '清空',
     );
@@ -102,14 +89,15 @@ class _LibraryPageState extends State<LibraryPage>
               const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
           labelPadding: const EdgeInsets.symmetric(horizontal: 14),
           tabs: List<Widget>.generate(
-            _tabLabels.length,
+            LibraryController.labels.length,
             (i) => Tab(
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(_tabIcons[i], size: 15),
+                  Icon(LibraryController.icons[i], size: 15),
                   const SizedBox(width: 5),
-                  Text(_tabLabels[i], style: const TextStyle(fontSize: 13)),
+                  Text(LibraryController.labels[i],
+                      style: const TextStyle(fontSize: 13)),
                 ],
               ),
             ),
@@ -124,25 +112,29 @@ class _LibraryPageState extends State<LibraryPage>
   }
 
   Widget _buildBody() {
-    final kind = _kind;
+    final kind = _controller.kind;
     final items = library.of(kind);
     final videos = items.map((e) => e.video).toList();
 
     if (!library.loaded) {
       return LayoutBuilder(builder: (context, c) {
-        return LoadingGrid(columns: Breakpoints.columns(c.maxWidth));
+        return LoadingGrid(
+          columns: Breakpoints.columns(c.maxWidth),
+          style: prefs.cardStyle,
+        );
       });
     }
 
     return VideoGrid(
       videos: videos,
+      style: prefs.cardStyle,
       onRefresh: () => library.load(),
       onTap: _openDetail,
       onLongPress: (video) => _confirmRemove(kind, video),
       header: PageHeaderCard(
-        title: _tabTitles[_active],
+        title: LibraryController.titles[_controller.active],
         count: '${videos.length} 条',
-        subtitle: _tabHints[_active],
+        subtitle: LibraryController.hints[_controller.active],
         trailing: videos.isEmpty
             ? null
             : GlassChip(
@@ -158,13 +150,9 @@ class _LibraryPageState extends State<LibraryPage>
               ),
       ),
       empty: EmptyView(
-        icon: _tabIcons[_active],
-        title: '${_tabTitles[_active]}还是空的',
-        subtitle: _active == 0
-            ? '打开任意视频，点右上角的收藏按钮即可加入'
-            : _active == 1
-                ? '浏览过的视频会自动出现在这里'
-                : '在视频详情页点「稍后再看」即可加入',
+        icon: LibraryController.icons[_controller.active],
+        title: '${LibraryController.titles[_controller.active]}还是空的',
+        subtitle: _controller.emptyHint(),
       ),
     );
   }

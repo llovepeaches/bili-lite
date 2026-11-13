@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 
 import '../../core/config.dart';
-import '../../core/oauth_launcher.dart';
 import '../../core/theme.dart';
 import '../../core/tokens.dart';
 import '../../state/auth_session.dart';
 import '../../state/globals.dart';
-import '../../widgets/confirm_dialog.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/state_views.dart';
+import 'account_controller.dart';
 
-/// 设置页里的「B 站账号」卡片。
+/// 设置页里的「B 站账号」卡片（视图层）。
 ///
 /// 对应官方 OAuth 2.0 授权码流程：授权在 B 站官方页面完成，BFF 持有
 /// client_secret 换取 token，客户端领取后按用户要求持久化到本机。
 /// 没有开放平台凭证时明确显示「未配置」，绝不伪造登录入口。
+///
+/// 视图只负责渲染与转发交互，具体流程见 [AccountController]。
 class AccountCard extends StatefulWidget {
   const AccountCard({Key? key}) : super(key: key);
 
@@ -23,39 +24,28 @@ class AccountCard extends StatefulWidget {
 }
 
 class _AccountCardState extends State<AccountCard> {
-  final TextEditingController _ticket = TextEditingController();
+  late final AccountController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AccountController();
+  }
 
   @override
   void dispose() {
-    _ticket.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   Future<void> _login() async {
-    final begun = await authSession.beginLogin();
-    if (begun == null) return;
-    try {
-      await openAuthorizeUrl(begun.authorizeUrl);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('无法打开授权页，请检查浏览器或网络'),
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
+    final opened = await _controller.beginLogin();
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('无法打开授权页，请检查浏览器或网络'),
+        behavior: SnackBarBehavior.floating,
+      ));
     }
-  }
-
-  Future<void> _signOut() async {
-    final ok = await showConfirmDialog(
-      context,
-      title: '退出 B 站账号？',
-      message: '将删除本机保存的 access_token、refresh_token 与账号资料，不可撤销。'
-          '这不会解除 B 站侧的授权，如需彻底解除请到 B 站账号设置里的授权管理操作。',
-      confirmLabel: '退出登录',
-    );
-    if (!ok) return;
-    await authSession.signOut();
   }
 
   @override
@@ -132,7 +122,7 @@ class _AccountCardState extends State<AccountCard> {
           _kv('待配置', missing.join(' / '), sub),
         ],
         const SizedBox(height: 10),
-        _kv('授权服务', ApiConfig.oauthDisplayBase, sub),
+        _kv('授权服务', AccountController.oauthService, sub),
         const SizedBox(height: 12),
         GlassChip(
           label: '重新检测配置',
@@ -157,7 +147,7 @@ class _AccountCardState extends State<AccountCard> {
           sub,
         ),
         const SizedBox(height: 10),
-        _kv('授权服务', ApiConfig.oauthDisplayBase, sub),
+        _kv('授权服务', AccountController.oauthService, sub),
         const SizedBox(height: 12),
         GlassChip(
           label: '重试',
@@ -183,7 +173,7 @@ class _AccountCardState extends State<AccountCard> {
         const SizedBox(height: 10),
         _kv('接入方式', '官方授权码 + 服务端换取 token', sub),
         _kv('申请权限', (cfg?.scopes ?? const <String>[]).join(', '), sub),
-        _kv('授权服务', ApiConfig.oauthDisplayBase, sub),
+        _kv('授权服务', AccountController.oauthService, sub),
         if ((cfg?.redirectUri ?? '').isNotEmpty)
           _kv('回调地址', cfg!.redirectUri, sub),
         const SizedBox(height: 12),
@@ -216,16 +206,14 @@ class _AccountCardState extends State<AccountCard> {
         ),
         const SizedBox(height: 12),
         TextField(
-          controller: _ticket,
+          controller: _controller.ticket,
           decoration: InputDecoration(
             labelText: '一次性授权码',
             hintText: '粘贴回调页显示的 ticket',
             isDense: true,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          onSubmitted: (v) {
-            if (v.trim().isNotEmpty) authSession.completeWithTicket(v);
-          },
+          onSubmitted: (_) => _controller.submitTicket(),
         ),
         const SizedBox(height: 10),
         Wrap(
@@ -237,15 +225,13 @@ class _AccountCardState extends State<AccountCard> {
               icon: Icons.check_rounded,
               tint: AppColors.pink,
               radius: 11,
-              onTap: authSession.busy
-                  ? null
-                  : () => authSession.completeWithTicket(_ticket.text),
+              onTap: authSession.busy ? null : _controller.submitTicket,
             ),
             GlassChip(
               label: '取消',
               icon: Icons.close_rounded,
               radius: 11,
-              onTap: () => authSession.cancelAuthorizing(),
+              onTap: _controller.cancelAuthorizing,
             ),
           ],
         ),
@@ -296,7 +282,7 @@ class _AccountCardState extends State<AccountCard> {
           ],
         ),
         const SizedBox(height: 12),
-        _kv('openid', _mask(u?.openid ?? ''), sub),
+        _kv('openid', AccountController.mask(u?.openid ?? ''), sub),
         _kv('授权权限', t.scopes.isEmpty ? '—' : t.scopes.join(', '), sub),
         _kv('凭证有效期', t.expiresText, sub),
         _kv('本地保存', s.storageAvailable ? '是（仅本机）' : '否（当前平台不支持持久化）', sub),
@@ -326,7 +312,7 @@ class _AccountCardState extends State<AccountCard> {
               label: '退出登录',
               icon: Icons.logout_rounded,
               radius: 11,
-              onTap: _signOut,
+              onTap: () => _controller.signOut(context),
             ),
           ],
         ),
@@ -429,11 +415,5 @@ class _AccountCardState extends State<AccountCard> {
         ],
       ),
     );
-  }
-
-  String _mask(String raw) {
-    if (raw.isEmpty) return '—';
-    if (raw.length <= 8) return raw;
-    return '${raw.substring(0, 4)}…${raw.substring(raw.length - 4)}';
   }
 }

@@ -1,7 +1,26 @@
 /// BFF 统一数据模型。客户端只认识这里的结构，上游字段变化被隔离在服务端。
 library models;
 
-String _s(dynamic v) => v == null ? '' : v.toString();
+String _s(dynamic v) {
+  if (v == null) return '';
+  if (v is String) return v;
+  // 上游偶尔把 reason 这类字段塞成对象，直接 toString 会得到 "[object Object]"。
+  if (v is Map) {
+    for (final key in <String>['content', 'reason', 'text', 'name']) {
+      final nested = _s(v[key]);
+      if (nested.isNotEmpty) return nested;
+    }
+    return '';
+  }
+  if (v is List) {
+    for (final item in v) {
+      final nested = _s(item);
+      if (nested.isNotEmpty) return nested;
+    }
+    return '';
+  }
+  return v.toString();
+}
 
 int _i(dynamic v) {
   if (v is int) return v;

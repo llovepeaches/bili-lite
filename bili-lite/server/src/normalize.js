@@ -14,6 +14,33 @@ const num = (v) => {
 };
 const str = (v) => (v === undefined || v === null ? '' : String(v));
 
+/**
+ * 上游的 `rcmd_reason` / `reason` 有三种形态：字符串、对象
+ *（`{ content: '已关注', reason_id: 1 }`）、以及对象数组。直接 String(v)
+ * 会得到 "[object Object]" 这种脏字符串塞进卡片，所以这里统一收敛成纯文本。
+ */
+function reasonText(value) {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return cleanText(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = reasonText(item);
+      if (text) return text;
+    }
+    return '';
+  }
+  if (typeof value === 'object') {
+    return (
+      reasonText(value.content) ||
+      reasonText(value.reason) ||
+      reasonText(value.text) ||
+      reasonText(value.name) ||
+      ''
+    );
+  }
+  return cleanText(String(value));
+}
+
 /** 去掉搜索结果里的 <em class="keyword"> 高亮标签，并解码常见 HTML 实体。 */
 function cleanText(value) {
   return str(value)
@@ -81,7 +108,7 @@ function video(raw) {
     pubdate: num(raw.pubdate),
     desc: cleanText(raw.desc ?? raw.description),
     tname: cleanText(raw.tname ?? raw.typename),
-    reason: cleanText(raw.reason ?? raw.rcmd_reason ?? raw.rec_reason),
+    reason: reasonText(raw.reason ?? raw.rcmd_reason ?? raw.rec_reason),
   };
 }
 
@@ -100,7 +127,7 @@ function fromFeedItem(item) {
     stat: statFrom(item.stat),
     pubdate: item.pubdate,
     tname: item.tname,
-    reason: item.rcmd_reason?.content ?? item.rcmd_reason?.reason,
+    reason: reasonText(item.rcmd_reason),
   });
 }
 
@@ -126,7 +153,7 @@ function fromRankItem(item) {
     pubdate: item.pubdate,
     desc: item.desc,
     tname: item.tname,
-    reason: item.rcmd_reason,
+    reason: reasonText(item.rcmd_reason),
     score: num(item.score),
   });
 }
