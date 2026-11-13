@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/card_style.dart';
 import '../core/responsive.dart';
 import '../core/theme.dart';
 import '../data/models.dart';
@@ -21,6 +22,7 @@ class VideoGrid extends StatelessWidget {
     this.controller,
     this.empty,
     this.onLongPress,
+    this.style = CardStyle.immersive,
   }) : super(key: key);
 
   final List<Video> videos;
@@ -34,6 +36,9 @@ class VideoGrid extends StatelessWidget {
   final ScrollController? controller;
   final Widget? empty;
   final void Function(Video video)? onLongPress;
+
+  /// 卡片呈现样式。沉浸式少一行文字，卡片更高密度。
+  final CardStyle style;
 
   @override
   Widget build(BuildContext context) {
@@ -74,13 +79,18 @@ class VideoGrid extends StatelessWidget {
                       crossAxisCount: columns,
                       crossAxisSpacing: Breakpoints.gridSpacing,
                       mainAxisSpacing: 12,
-                      childAspectRatio:
-                          Breakpoints.cardAspectRatio(width, columns, gutter),
+                      childAspectRatio: Breakpoints.cardAspectRatio(
+                        width,
+                        columns,
+                        gutter,
+                        textArea: Breakpoints.textAreaOf(style),
+                      ),
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) => VideoCard(
                         video: videos[index],
                         rank: ranked ? index + 1 : 0,
+                        style: style,
                         onTap: () => onTap(videos[index]),
                         onLongPress: onLongPress == null
                             ? null

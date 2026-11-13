@@ -197,14 +197,7 @@ class BiliDirect {
       final item = _map(raw);
       final goto = _string(item['goto']);
       if (goto != 'av' && _string(item['bvid']).isEmpty) continue;
-      final reasonRaw = item['rcmd_reason'];
-      String reason = '';
-      if (reasonRaw is Map) {
-        reason = _string(reasonRaw['content']);
-        if (reason.isEmpty) reason = _string(reasonRaw['reason']);
-      } else {
-        reason = _string(reasonRaw);
-      }
+      final reason = _reasonText(item['rcmd_reason']);
       final owner = _map(item['owner']);
       final v = _video(<String, dynamic>{
         'aid': item['id'],
@@ -397,7 +390,7 @@ class BiliDirect {
       'pubdate': item['pubdate'],
       'desc': item['desc'],
       'tname': item['tname'],
-      'reason': item['rcmd_reason'],
+      'reason': _reasonText(item['rcmd_reason']),
     });
   }
 
@@ -421,7 +414,7 @@ class BiliDirect {
       'pubdate': _int(r['pubdate']),
       'desc': _clean(r['desc'] ?? r['description']),
       'tname': _clean(r['tname'] ?? r['typename']),
-      'reason': _clean(r['reason'] ?? r['rcmd_reason'] ?? r['rec_reason']),
+      'reason': _reasonText(r['reason'] ?? r['rcmd_reason'] ?? r['rec_reason']),
     };
   }
 
@@ -460,6 +453,34 @@ class BiliDirect {
       .replaceAll('&#39;', "'")
       .replaceAll('&nbsp;', ' ')
       .trim();
+
+  /// 上游 `rcmd_reason` 可能是字符串、对象或对象数组，直接 toString 会得到
+  /// "[object Object]"。这里统一收敛成纯文本，与 BFF 侧逻辑保持一致。
+  String _reasonText(dynamic value) {
+    if (value == null) return '';
+    if (value is String) return _clean(value);
+    if (value is List) {
+      for (final item in value) {
+        final text = _reasonText(item);
+        if (text.isNotEmpty) return text;
+      }
+      return '';
+    }
+    if (value is Map) {
+      final candidates = <dynamic>[
+        value['content'],
+        value['reason'],
+        value['text'],
+        value['name'],
+      ];
+      for (final c in candidates) {
+        final text = _reasonText(c);
+        if (text.isNotEmpty) return text;
+      }
+      return '';
+    }
+    return _clean(value.toString());
+  }
 
   int _toSeconds(dynamic value) {
     if (value is int) return value < 0 ? 0 : value;

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'core/glass_theme.dart';
 import 'core/theme.dart';
 import 'features/shell/shell_page.dart';
+import 'router/app_routes.dart';
 import 'state/globals.dart';
 import 'widgets/glass.dart';
 
@@ -77,6 +78,9 @@ class _BiliLiteAppState extends State<BiliLiteApp>
           theme: AppTheme.build(Brightness.light),
           darkTheme: AppTheme.build(Brightness.dark),
           themeMode: appState.themeMode,
+          // 集中路由表：所有页面跳转都登记在 AppRouter 里，
+          // 这里只做一次挂接，避免各页面各写一份 MaterialPageRoute。
+          onGenerateRoute: AppRouter.generate,
           // 全局三层：极光背景 → 玻璃作用域/镜面时钟 → 页面（透明 Scaffold）。
           builder: (context, child) => GlassScope(
             config: config,

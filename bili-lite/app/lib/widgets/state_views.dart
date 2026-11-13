@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/format.dart';
 import '../core/glass_theme.dart';
+import '../core/card_style.dart';
 import '../core/responsive.dart';
 import '../core/theme.dart';
 import '../core/tokens.dart';
@@ -51,11 +52,18 @@ class SourceBadge extends StatelessWidget {
 }
 
 class LoadingGrid extends StatelessWidget {
-  const LoadingGrid({Key? key, required this.columns, this.itemCount = 8})
-      : super(key: key);
+  const LoadingGrid({
+    Key? key,
+    required this.columns,
+    this.itemCount = 8,
+    this.style = CardStyle.immersive,
+  }) : super(key: key);
 
   final int columns;
   final int itemCount;
+
+  /// 与真实网格必须同款：文字区高度不同会导致加载完成瞬间整片缩放。
+  final CardStyle style;
 
   @override
   Widget build(BuildContext context) {
@@ -72,8 +80,12 @@ class LoadingGrid extends StatelessWidget {
           mainAxisSpacing: 12,
           // 重构前这里写死 0.82，与 VideoGrid 的动态算法不一致，
           // 数据加载完成的瞬间整片卡片会缩放一次。现在共用同一套算法。
-          childAspectRatio:
-              Breakpoints.cardAspectRatio(width, columns, gutter),
+          childAspectRatio: Breakpoints.cardAspectRatio(
+            width,
+            columns,
+            gutter,
+            textArea: Breakpoints.textAreaOf(style),
+          ),
         ),
         itemCount: itemCount,
         itemBuilder: (_, __) => const _SkeletonCard(),

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../core/route_args.dart';
+import '../core/tokens.dart';
 import '../data/models.dart';
-import '../features/detail/detail_page.dart';
 import '../state/globals.dart';
 import '../state/library_state.dart';
-import '../core/tokens.dart';
 
 /// 打开视频详情页。
 ///
@@ -20,8 +20,19 @@ Future<void> openVideoDetail(BuildContext context, Video video) async {
   // Flutter 3.0 没有 BuildContext.mounted；用 NavigatorState.mounted 判断，
   // 避免在页面已销毁时 push 导致崩溃。
   if (!navigator.mounted) return;
-  await navigator.push(
-    MaterialPageRoute<void>(builder: (_) => VideoDetailPage(video: video)),
+  await navigator.pushNamed(
+    AppRouteNames.videoDetail,
+    arguments: VideoDetailArgs(video),
+  );
+}
+
+/// 打开应用内播放页。
+Future<void> openPlayer(BuildContext context, Video video, {int page = 1}) async {
+  final navigator = Navigator.of(context);
+  if (!navigator.mounted) return;
+  await navigator.pushNamed(
+    AppRouteNames.player,
+    arguments: PlayerArgs(video, page: page),
   );
 }
 
