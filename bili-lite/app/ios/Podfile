@@ -15,7 +15,12 @@ ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
 project 'Runner', {
   'Debug' => :debug,
-  'Profile' => :profile,
+  # CocoaPods 的 build configuration type 只有 :debug 与 :release 两种。
+  # 写成 :profile 会让 xcodeproj 的 add_build_configuration 取
+  # Constants::PROJECT_DEFAULT_BUILD_SETTINGS[:profile] 得到 nil，
+  # 最终抛 "TypeError - no implicit conversion of nil into Hash"。
+  # Flutter 官方模板同样是 :release。
+  'Profile' => :release,
   'Release' => :release,
 }
 
