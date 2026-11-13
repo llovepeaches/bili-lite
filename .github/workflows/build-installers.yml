@@ -492,15 +492,35 @@ jobs:
     #     :debug / :release），会导致生成 Pods project 时抛
     #     "TypeError - no implicit conversion of nil into Hash"，已改回 :release。
     #
-    # 未签名 IPA 装不进真机；要可安装的 IPA 请用 ios-testflight job。
-    if: ${{ inputs.run_ios == 'true' }}
+    # 未签名 / ad-hoc 签名 IPA 装不进真机；要可安装的 IPA 请用 ios-testflight job。
+    #
+    # 注意：这里的开关**故意不用 job 级 if**。
+    # GitHub Actions 里「被 needs 依赖且自身被跳过」的 job 会连带把下游 job 一起跳过，
+    # 一旦 checksums 依赖 ios，那么 run_ios=false 时校验和与全部产物发布都会被跳过。
+    # 所以改成 job 永远运行（恒为 success），由 step 级的 SKIP_IOS 决定是否真的构建。
+    needs: [checks, release]
     runs-on: macos-15
     timeout-minutes: 60
     continue-on-error: true
+    env:
+      RUN_IOS: ${{ inputs.run_ios || 'false' }}
+      PUBLISH: ${{ inputs.publish || 'true' }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve iOS build switch
+        run: |
+          set -euo pipefail
+          if [ "$RUN_IOS" = "true" ]; then
+            echo "SKIP_IOS=false" >> "$GITHUB_ENV"
+            echo "run_ios=true，开始 iOS 构建"
+          else
+            echo "SKIP_IOS=true" >> "$GITHUB_ENV"
+            echo "::notice::run_ios 不为 true，跳过 iOS 构建（不影响其它端产物）"
+          fi
+
       - name: Select Xcode
+        if: env.SKIP_IOS != 'true'
         run: |
           set -euo pipefail
           want="${{ inputs.xcode_version }}"
@@ -521,6 +541,7 @@ jobs:
           version: ${{ env.FLUTTER_VERSION }}
 
       - name: Toolchain report
+        if: env.SKIP_IOS != 'true'
         run: |
           flutter --version
           ruby --version || true
@@ -528,12 +549,14 @@ jobs:
           echo "APPLE_TEAM_ID secret present: ${{ secrets.APPLE_TEAM_ID != '' }}"
 
       - name: Resolve app version
+        if: env.SKIP_IOS != 'true'
         run: |
           version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | sed -n "1p")
           echo "APP_VERSION=$version" >> "$GITHUB_ENV"
           echo "版本: $version"
 
       - name: Build iOS release (no codesign)
+        if: env.SKIP_IOS != 'true'
         working-directory: bili-lite/app
         run: |
           set -euo pipefail
@@ -542,6 +565,7 @@ jobs:
           ls -la build/ios/iphoneos/
 
       - name: Pack unsigned IPA
+        if: env.SKIP_IOS != 'true'
         run: |
           set -euo pipefail
           mkdir -p ipa/Payload
@@ -550,12 +574,65 @@ jobs:
           zip -qry "BiliLite-${APP_VERSION}-UNSIGNED.ipa" Payload
           unzip -l "BiliLite-${APP_VERSION}-UNSIGNED.ipa" | tail -3
 
+      - name: Pack ad-hoc signed IPA
+        if: env.SKIP_IOS != 'true'
+        run: |
+          set -euo pipefail
+          # 未签名的 .app 在 iOS 上连「装都装不上」，侧载工具（AltStore /
+          # Sideloadly）也要求 bundle 本身是合法签名的 bundle。
+          # 这里用本机自带的 ad-hoc 身份（codesign -s -）做一次自签名：
+          # 不需要任何 Apple 凭证，但产出的 IPA 结构合法、可被侧载工具重签。
+          APP=bili-lite/app/build/ios/iphoneos/Runner.app
+          if [ ! -d "$APP" ]; then
+            echo "::error::Runner.app not found"
+            exit 1
+          fi
+          # 签名顺序有讲究：先签 dylib，再签 framework，最后签 .app 本身。
+          # 顺序反了会因为引用未签名代码而被拒绝。
+          find "$APP/Frameworks" -type f -name "*.dylib" -print0 2>/dev/null \
+            | xargs -0 -I{} codesign --force --sign - --timestamp=none "{}" || true
+          for fw in "$APP"/Frameworks/*.framework; do
+            [ -e "$fw" ] || continue
+            codesign --force --sign - --timestamp=none "$fw"
+          done
+          for plug in "$APP"/PlugIns/*.app "$APP"/PlugIns/*.framework; do
+            [ -e "$plug" ] || continue
+            codesign --force --sign - --timestamp=none "$plug"
+          done
+          codesign --force --sign - --timestamp=none "$APP"
+          codesign --verify --deep --strict "$APP" || echo "::warning::深度校验未完全通过"
+          echo "--- 签名信息 ---"
+          codesign -dv --verbose=2 "$APP" 2>&1 | sed -n "1,6p"
+
+          rm -rf ipa-adhoc && mkdir -p ipa-adhoc/Payload
+          cp -R "$APP" ipa-adhoc/Payload/
+          cd ipa-adhoc
+          zip -qry "BiliLite-${APP_VERSION}-iOS-ADHOC.ipa" Payload
+          ls -la
+
       - uses: actions/upload-artifact@v4
+        if: env.SKIP_IOS != 'true'
         with:
           name: ios-unsigned-ipa
           path: ipa/*.ipa
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Publish iOS IPA to Release
+        if: ${{ env.SKIP_IOS != 'true' && env.PUBLISH == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          files=$(ls ipa/*.ipa ipa-adhoc/*.ipa 2>/dev/null || true)
+          if [ -z "$files" ]; then
+            echo "::warning::没有可发布的 IPA"
+            exit 0
+          fi
+          for f in $files; do
+            gh release upload "$RELEASE_TAG" "$f" --clobber --repo "$GITHUB_REPOSITORY"
+            echo "已发布 $f"
+          done
 
   ios-testflight:
     name: iOS signed IPA → TestFlight
@@ -693,7 +770,10 @@ jobs:
     name: Checksums and publish
     # 汇总所有 job 的产物，统一生成 SHA256SUMS 并发布，
     # 避免校验和需要手工维护而与实际资产脱节。
-    needs: [android, windows, web, source]
+    # ios 是 continue-on-error 的软失败：iOS 构建挂了不应该让其它端的
+    # 校验和与发布一起停摆，所以这里用 always() 保住下游。
+    needs: [android, windows, web, source, ios]
+    if: ${{ always() && needs.android.result == 'success' && needs.windows.result == 'success' && needs.web.result == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
@@ -709,7 +789,7 @@ jobs:
           mkdir -p installers
           # 源码归档由 source job 产出，一并纳入校验和。
           find artifacts -type f \( -name "*.apk" -o -name "*.exe" -o -name "bili-lite-web-v*" \
-            -o -name "bili-lite-v*-src.*" \) \
+            -o -name "bili-lite-v*-src.*" -o -name "*.ipa" \) \
             -exec cp {} installers/ \;
           ls -la installers/
 
