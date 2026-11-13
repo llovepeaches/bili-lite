@@ -18,7 +18,7 @@ on:
       release_tag:
         description: "Release tag to publish assets to"
         required: false
-        default: "bili-lite-v1.2.0"
+        default: "bili-lite-v1.3.0"
       publish:
         description: "Upload artifacts to the GitHub Release"
         required: false
@@ -49,7 +49,7 @@ concurrency:
 
 env:
   FLUTTER_VERSION: ${{ inputs.flutter_version || '3.0.0' }}
-  RELEASE_TAG: ${{ inputs.release_tag || 'bili-lite-v1.2.0' }}
+  RELEASE_TAG: ${{ inputs.release_tag || 'bili-lite-v1.3.0' }}
   PUBLISH: ${{ inputs.publish || 'true' }}
 
 jobs:
@@ -95,9 +95,89 @@ jobs:
           npm run check
           npm run verify:oauth
 
+  release:
+    name: Ensure release exists
+    # gh release upload 在目标 Release 不存在时会直接失败。
+    # 首次发版（或换版本号）时目标还不存在，所以先建一个空 Release，
+    # 各构建 job 再往里传产物。
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG 已存在"
+            exit 0
+          fi
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --title "Bili Lite v${version} · Android / Windows / Web" \
+            --notes "Bili Lite v${version}：Android APK、Windows 安装程序、Web 静态产物与源码归档。由 GitHub Actions 自动构建。" \
+            --target "${{ github.sha }}"
+          echo "已创建 Release $RELEASE_TAG"
+
+  source:
+    name: Source archives
+    # 源码归档此前是手工上传的，与实际提交可能脱节。改为在 CI 里从
+    # 同一份 checkout 打包，保证「发布的源码」与「构建产物的源码」一致。
+    needs: [checks, release]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          set -euo pipefail
+          version=$(grep -E "^version:" bili-lite/app/pubspec.yaml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "版本: $version"
+
+      - name: Package source
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          mkdir -p installers
+          # 用 git archive 而不是 tar/zip：它只打包**已入库**的文件，
+          # 因此不会混进 build/、.dart_tool/、node_modules/ 这些本地产物，
+          # 也天然与构建产物同源（同一份 commit）。
+          # docs/preview 是 25MB 的截图集，不进源码归档。
+          git archive --format=tar.gz --prefix="bili-lite-v${version}-src/" \
+            -o "installers/bili-lite-v${version}-src.tar.gz" \
+            HEAD bili-lite ':(exclude)bili-lite/docs/preview'
+          git archive --format=zip --prefix="bili-lite-v${version}-src/" \
+            -o "installers/bili-lite-v${version}-src.zip" \
+            HEAD bili-lite ':(exclude)bili-lite/docs/preview'
+          ls -la installers/
+          echo "--- 内容抽查 ---"
+          tar -tzf "installers/bili-lite-v${version}-src.tar.gz" | head -5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-archives
+          path: installers/bili-lite-v*-src.*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish to Release
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" installers/bili-lite-v*-src.* \
+            --clobber --repo "$GITHUB_REPOSITORY"
+          echo "已发布源码归档到 $RELEASE_TAG"
+
   android:
     name: Android release APK
-    needs: [checks]
+    needs: [checks, release]
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -220,7 +300,7 @@ jobs:
 
   windows:
     name: Windows x64 installer (exe)
-    needs: [checks]
+    needs: [checks, release]
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
@@ -341,7 +421,7 @@ jobs:
 
   web:
     name: Web bundle + BFF package
-    needs: [checks]
+    needs: [checks, release]
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -611,7 +691,7 @@ jobs:
     name: Checksums and publish
     # 汇总所有 job 的产物，统一生成 SHA256SUMS 并发布，
     # 避免校验和需要手工维护而与实际资产脱节。
-    needs: [android, windows, web]
+    needs: [android, windows, web, source]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
@@ -625,18 +705,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p installers
-          find artifacts -type f \( -name "*.apk" -o -name "*.exe" -o -name "bili-lite-web-v*" \) \
+          # 源码归档由 source job 产出，一并纳入校验和。
+          find artifacts -type f \( -name "*.apk" -o -name "*.exe" -o -name "bili-lite-web-v*" \
+            -o -name "bili-lite-v*-src.*" \) \
             -exec cp {} installers/ \;
           ls -la installers/
-
-      - name: Fetch source archives already on the Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern "bili-lite-v*-src.*" --dir installers/ || \
-            echo "::warning::未找到源码归档，跳过"
 
       - name: Generate SHA256SUMS
         run: |

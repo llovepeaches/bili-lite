@@ -179,7 +179,7 @@ function requestJson(host, pathWithQuery, options = {}) {
         method: options.method || 'GET',
         headers: Object.assign(
           {
-            'User-Agent': 'BiliLite/1.2.0 (+official-oauth-client)',
+            'User-Agent': 'BiliLite/1.3.0 (+official-oauth-client)',
             Accept: 'application/json',
           },
           options.headers || {}
