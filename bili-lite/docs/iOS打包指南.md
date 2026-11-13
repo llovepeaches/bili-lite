@@ -152,17 +152,33 @@ gh workflow run build-installers.yml -f run_ios=true -f publish=false
 
 ---
 
-## 六、当前工程的已知阻碍：Flutter 3.0.0 vs Xcode 16
+## 六、当前状态：编译链路已打通，只差证书
 
-这是本项目 iOS 打包目前最实质的障碍，和签名无关。
+**结论先说**：iOS 的编译环节已经在 GitHub Actions 上跑通了，不需要升级 Flutter。
+剩下的唯一障碍是 Apple 的账号与证书。
 
-### 事实
+### 实测结果（run `43336509008`，2026-11-13）
 
-- `macos-13` runner 已于 **2025-12-04** 移除，`macos-14` 已于 **2026-11-02** EOL；
-- 现在只剩 `macos-15`（Xcode **16.0–16.4**、26.x）和 `macos-26`；
+| 项 | 结果 |
+| --- | --- |
+| Runner | `macos-15`，Xcode **16.4**，iOS 18.5 SDK |
+| Flutter | **3.0.0**（未升级） |
+| 编译 | `flutter build ios --release --no-codesign` ✅ 110.4s |
+| 产物 | `Runner.app` → `BiliLite-1.2.0-UNSIGNED.ipa`，7.29 MB |
+| 可执行文件 | `Mach-O 64-bit arm64 executable`（真机架构） |
+| `CFBundleIdentifier` | `com.bililite.bililite` |
+| `CFBundleShortVersionString` / `CFBundleVersion` | `1.2.0` / `15`（= GitHub run number） |
+| `MinimumOSVersion` | `13.0` |
+
+### 曾经拦路的三个事实（都已处理）
+
+- `macos-13` runner 已于 **2025-12-04** 移除，`macos-14` 已于 **2026-11-02** EOL，
+  现在只剩 `macos-15`（Xcode **16.0–16.4**、26.x）与 `macos-26`；
 - 镜像里**不再有 Xcode 15.x**，没法靠降级 Xcode 绕开；
-- Xcode 16 起 deployment target 硬性下限为 iOS 12.0；
-- Flutter 官方在 **3.24.4** 才修复 Xcode 16 相关的 `xcode_backend.sh` 与 `Generated.xcconfig` 模板。
+- Xcode 16 起 deployment target 硬性下限为 iOS 12.0。
+
+> 曾以为"Flutter 3.0.0 与 Xcode 16 不兼容、必须升到 3.24.4+"是硬前提，
+> 实测证明**并非如此**。真正卡住的是下面两个 Podfile 配置问题，与 Flutter 版本无关。
 
 ### 已经处理的部分
 
@@ -171,10 +187,92 @@ gh workflow run build-installers.yml -f run_ios=true -f publish=false
 - `Podfile` 的 `platform :ios` 统一到 **13.0**，`post_install` 强制所有 pod 一致，
   并补上 CocoaPods 1.16+ `target_validator` 对空 `ARCHS` 的兼容处理
 - `Podfile` 顶部保留 `File.exists?` 兼容补丁（Ruby 3.2+ 已移除该方法）
+- `Podfile` 的 `pre_install` 绕过 CocoaPods #3289 的校验崩溃（见下）
 
-### 还需要处理的部分（升级 Flutter）
+### 实测：macos-15 上的两个真实拦路虎
 
-工程当前锁定 `Flutter 3.0.0 / Dart 2.17`，要吃到 Xcode 16 支持需升级到 `≥ 3.24.4`。改动清单：
+在 `macos-15`（Xcode 16.4）实跑 `flutter build ios --no-codesign`，连着撞了两个坑。
+**两个都跟 Flutter 版本无关**，一个在 CocoaPods，一个在本工程自己的 Podfile。
+
+#### 坑一：CocoaPods 1.17 的 target_validator 崩溃
+
+```
+Error running pod install
+NoMethodError - undefined method `each' for nil
+  .../cocoapods-1.17.0/lib/cocoapods/installer/xcode/target_validator.rb:88:in `each'
+  .../target_validator.rb:88:in `flat_map'
+  .../target_validator.rb:88:in `block (2 levels) in verify_no_static_framework_transitive_dependencies'
+```
+
+对应源码（CocoaPods 1.17.0 `target_validator.rb`）：
+
+```ruby
+static_deps = dynamic_pod_targets.flat_map(&:recursive_dependent_targets).uniq.select(&:build_as_static?)
+```
+
+`recursive_dependent_targets` 递归展开依赖链时返回了 nil，导致 `.each` 崩掉。
+本工程用了 `use_frameworks!` + Flutter 自带的静态 Framework，正好命中这条路径。
+
+**已修**：在 `Podfile` 里用 issue #3289 的官方 workaround 跳过这项校验：
+
+```ruby
+pre_install do |installer|
+  Pod::Installer::Xcode::TargetValidator.send(
+    :define_method, :verify_no_static_framework_transitive_dependencies
+  ) {}
+end
+```
+
+Flutter 官方模板同样使用 `use_frameworks!`，跳过这项校验是安全的。
+另一条路是在 CI 里把 CocoaPods 降到 1.16.2，也能绕过。
+
+#### 坑二：Podfile 里 Profile 的映射值写错（本工程的真 bug）
+
+绕过坑一后，`pod install` 又崩在下一层：
+
+```
+TypeError - no implicit conversion of nil into Hash
+  xcodeproj-1.28.1/lib/xcodeproj/project.rb:794:in `merge!'
+  xcodeproj-1.28.1/lib/xcodeproj/project.rb:794:in `add_build_configuration'
+  cocoapods-1.17.0/lib/cocoapods/project.rb:375:in `add_build_configuration'
+  cocoapods-1.17.0/.../pods_project_generator/project_generator.rb:88
+```
+
+顺着源码看下去就明白了 —— `xcodeproj` 生成 build configuration 时，
+会按 `type` 去默认配置表里取一份基础设置：
+
+```ruby
+common_settings = Constants::PROJECT_DEFAULT_BUILD_SETTINGS
+settings = ProjectHelper.deep_dup(common_settings[:all])
+settings.merge!(ProjectHelper.deep_dup(common_settings[type]))   # ← type 为 nil 时炸这里
+```
+
+而 CocoaPods 的 `type` **只有 `:debug` 与 `:release` 两种**。本工程的 Podfile 写成了：
+
+```ruby
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :profile,   # ← 非法值！common_settings[:profile] 是 nil
+  'Release' => :release,
+}
+```
+
+`common_settings[:profile]` 返回 nil，`merge!(nil)` 就抛出了那个 TypeError。
+
+**已修**：改回 Flutter 官方模板的写法：
+
+```ruby
+'Profile' => :release,
+```
+
+> 这个坑很值得记一笔：报错信息指向 CocoaPods / xcodeproj 两个第三方库，
+> 真正的原因却是工程里一行手误。遇到 CocoaPods 崩在 `add_build_configuration`
+> 附近时，先回头看 `project 'Runner'` 那段映射。
+
+### 可选：升级 Flutter 的收益与代价
+
+**当前不需要升级**，Flutter 3.0.0 在 Xcode 16.4 上编译正常。
+但如果你想顺手把工程 modernize，以下是评估过的改动清单：
 
 | # | 改动 | 位置 | 说明 |
 | --- | --- | --- | --- |
@@ -186,6 +284,9 @@ gh workflow run build-installers.yml -f run_ios=true -f publish=false
 
 第 3 项影响面最大：Web 端的液态玻璃是用 Canvas 手动模拟折射与镜面高光的，
 换 canvaskit 后渲染路径变化，需要重新做一轮浏览器验收。
+好处是 canvaskit 支持真实 `BackdropFilter`，液态玻璃在 Web 上可以少一层手工模拟。
+
+**建议**：等 iOS 分发链路稳定后再单独安排，别和签名工作搅在一起。
 
 ---
 
@@ -206,6 +307,7 @@ TestFlight 专用格式并重新签名，用户不需要装描述文件。
 
 ## 八、一句话总结
 
-> **编译**要 macOS + Xcode，**签名**要 $99/年的 Apple Developer Program，
+> **编译**已经在 GitHub Actions 上跑通（macos-15 + Xcode 16.4 + Flutter 3.0.0，实测通过），
+> **签名**需要 $99/年的 Apple Developer Program，
 > **分发**用 TestFlight 就能全自动。
-> 仓库侧已经准备好流水线与脚本，剩下的只有账号和证书——以及把 Flutter 从 3.0.0 升到 3.24.4+。
+> 仓库侧流水线、脚本、配置都已就位，剩下的只有账号和证书。

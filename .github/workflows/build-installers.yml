@@ -353,15 +353,19 @@ jobs:
     name: iOS unsigned IPA (build smoke test)
     # 产出未签名 IPA，用于验证 iOS 编译链路本身是否通畅。
     #
-    # 关键约束（2026-11 实测）：
-    #   * macos-13 已于 2025-12 下线，macos-14 已于 2026-11-02 EOL，
-    #     现在只剩 macos-15（Xcode 16.0~16.4、26.x）与 macos-26；
-    #   * 镜像里已没有 Xcode 15.x，无法再靠降级 Xcode 绕开 Xcode 16；
-    #   * Xcode 16 强制 deployment target >= 12.0（工程已统一到 13.0）；
-    #   * Flutter 3.0.0 与 Xcode 16 不兼容，官方在 Flutter 3.24.4 才修复
-    #     xcode_backend.sh 与 Generated.xcconfig 模板。
-    # 因此本 job 在 flutter_version=3.0.0 时大概率失败；把它切到
-    # >= 3.24.4 才是可用的组合。
+    # 实测状态（run 43336509008, 2026-11-13）：
+    #   macos-15 + Xcode 16.4 + Flutter 3.0.0 → flutter build ios --release
+    #   --no-codesign 成功，110.4s，产出 Runner.app 与 7.29MB 的未签名 IPA。
+    #   **不需要升级 Flutter**。
+    #
+    # 曾经拦路的三个点，都已修好：
+    #   * macos-13 已下线、macos-14 已 EOL，镜像里只剩 Xcode 16.x / 26.x；
+    #   * Xcode 16 要求 deployment target >= 12.0 —— 工程已统一到 13.0；
+    #   * Podfile 里 'Profile' => :profile 是非法值（CocoaPods 只认
+    #     :debug / :release），会导致生成 Pods project 时抛
+    #     "TypeError - no implicit conversion of nil into Hash"，已改回 :release。
+    #
+    # 未签名 IPA 装不进真机；要可安装的 IPA 请用 ios-testflight job。
     if: ${{ inputs.run_ios == 'true' }}
     runs-on: macos-15
     timeout-minutes: 60
