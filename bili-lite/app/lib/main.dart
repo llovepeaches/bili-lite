@@ -7,6 +7,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 本地数据先就绪；服务探测在 AppState.init 里异步进行，不阻塞首屏
   await library.load();
+  await searchHistory.load();
   await appState.init();
 
   // 官方 OAuth 2.0：授权完成后 B 站（或本地演示授权页）会重定向回

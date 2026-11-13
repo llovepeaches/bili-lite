@@ -1,16 +1,14 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/navigation.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
+import '../../core/tokens.dart';
 import '../../data/models.dart';
 import '../../state/globals.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/state_views.dart';
 import '../../widgets/video_grid.dart';
-import '../detail/detail_page.dart';
 
 const List<String> _hotWords = <String>[
   'Flutter 教程',
@@ -31,8 +29,6 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
-  static const String _historyKey = 'bili_lite_search_history';
-
   final TextEditingController _input = TextEditingController();
 
   String _keyword = '';
@@ -44,13 +40,6 @@ class _SearchPageState extends State<SearchPage> {
   String? _error;
   bool _loading = false;
   bool _loadingMore = false;
-  List<String> _history = <String>[];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadHistory();
-  }
 
   @override
   void dispose() {
@@ -58,37 +47,8 @@ class _SearchPageState extends State<SearchPage> {
     super.dispose();
   }
 
-  Future<void> _loadHistory() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_historyKey);
-      if (raw != null && raw.isNotEmpty) {
-        _history = (json.decode(raw) as List<dynamic>)
-            .map((e) => e.toString())
-            .toList();
-        if (mounted) setState(() {});
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _saveHistory(String word) async {
-    _history.remove(word);
-    _history.insert(0, word);
-    if (_history.length > 10) _history = _history.sublist(0, 10);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_historyKey, json.encode(_history));
-    } catch (_) {}
-  }
-
-  Future<void> _clearHistory() async {
-    _history = <String>[];
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_historyKey);
-    } catch (_) {}
-    if (mounted) setState(() {});
-  }
+  /// 搜索历史已归入 state 层（`SearchHistory`），页面只负责展示。
+  List<String> get _history => searchHistory.items;
 
   Future<void> _search(String word, {bool more = false}) async {
     final keyword = word.trim();
@@ -104,7 +64,7 @@ class _SearchPageState extends State<SearchPage> {
       _error = null;
       _keyword = keyword;
       _input.text = keyword;
-      await _saveHistory(keyword);
+      await searchHistory.add(keyword);
     }
 
     setState(() => _loading = true);
@@ -124,6 +84,9 @@ class _SearchPageState extends State<SearchPage> {
         _error = null;
       });
     } catch (e) {
+      // 重构前加载更多失败时 _page 没有回退，用户重试会直接跳过一页数据。
+      // 现在失败就把页码退回去，保证重试拿到的是同一页。
+      if (more) _page -= 1;
       if (mounted) setState(() => _error = e.toString());
     } finally {
       _loadingMore = false;
@@ -142,10 +105,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _openDetail(Video video) {
-    library.addHistory(video);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => VideoDetailPage(video: video)),
-    );
+    openVideoDetail(context, video);
   }
 
   @override
@@ -212,6 +172,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildBody() {
+    final sub = context.subTextColor;
     if (_keyword.isEmpty) return _buildLanding();
 
     if (_loading && _results.isEmpty && _error == null) {
@@ -246,7 +207,7 @@ class _SearchPageState extends State<SearchPage> {
               ),
               const SizedBox(width: 8),
               Text('约 $_total 条结果',
-                  style: const TextStyle(fontSize: 11, color: AppColors.lightSub)),
+                  style: TextStyle(fontSize: AppFontSize.caption, color: sub)),
               const SizedBox(width: 8),
               SourceBadge(source: _source),
             ],
@@ -262,37 +223,39 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildLanding() {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final sub = dark ? AppColors.darkSub : AppColors.lightSub;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
-      children: [
-        if (_history.isNotEmpty) ...[
-          SectionTitle(
-            title: '搜索历史',
-            trailing: GlassPill(
-              radius: 10,
-              padding: const EdgeInsets.all(6),
-              onTap: _clearHistory,
-              child: Icon(Icons.delete_outline_rounded, size: 17, color: sub),
+    final sub = context.subTextColor;
+    // 订阅 searchHistory：历史在别处（如设置页清空本地数据）变化时，这里同步刷新。
+    return AnimatedBuilder(
+      animation: searchHistory,
+      builder: (context, _) => ListView(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+        children: [
+          if (_history.isNotEmpty) ...[
+            SectionTitle(
+              title: '搜索历史',
+              trailing: GlassPill(
+                radius: 10,
+                padding: const EdgeInsets.all(6),
+                onTap: () => searchHistory.clear(),
+                child: Icon(Icons.delete_outline_rounded, size: 17, color: sub),
+              ),
             ),
-          ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _history
-                .map((word) => GlassChip(
-                      label: word,
-                      radius: 12,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      labelStyle: TextStyle(fontSize: 12, color: sub),
-                      onTap: () => _search(word),
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: 26),
-        ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _history
+                  .map((word) => GlassChip(
+                        label: word,
+                        radius: 12,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 7),
+                        labelStyle: TextStyle(fontSize: 12, color: sub),
+                        onTap: () => _search(word),
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 26),
+          ],
         const SectionTitle(title: '大家都在搜'),
         Wrap(
           spacing: 9,
@@ -335,14 +298,16 @@ class _SearchPageState extends State<SearchPage> {
         Center(
           child: Column(
             children: [
-              Icon(Icons.travel_explore_outlined, size: 40, color: sub.withOpacity(0.5)),
+              Icon(Icons.travel_explore_outlined,
+                  size: 40, color: sub.withOpacity(0.5)),
               const SizedBox(height: 10),
               Text('只搜视频，不打扰',
                   style: TextStyle(fontSize: 12.5, color: sub)),
             ],
           ),
         ),
-      ],
+        ],
+      ),
     );
   }
 }

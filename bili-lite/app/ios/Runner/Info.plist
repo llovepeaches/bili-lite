@@ -45,13 +45,37 @@
 	<false/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
-	<!-- 开发期 BFF 为 http；上架前请改为 NSExceptionDomains 精确白名单并部署 https -->
+	<!--
+	  重构前这里是 NSAllowsArbitraryLoads = true：等于对所有域名关闭 ATS，
+	  App Store 审核会直接拒（Guideline 2.5 / 3.1）。
+
+	  现在改成精确白名单：
+	    * 默认仍然禁止明文（不写 NSAllowsArbitraryLoads）；
+	    * NSAllowsLocalNetworking 允许访问 .local 与局域网 Bonjour 服务，
+	      这是连本机 / 局域网 BFF 调试所必需的；
+	    * NSExceptionDomains 里的 localhost / 127.0.0.1 显式放行明文，
+	      供模拟器与真机调试使用。
+
+	  原生端直连 B 站走 HTTPS（api.bilibili.com、*.hdslb.com），
+	  官方外链播放器 player.bilibili.com 也是 HTTPS，都不需要额外放行。
+	-->
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
 	</dict>
 </dict>
 </plist>

@@ -45,3 +45,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Node（仅 tool/verify_web.cjs 的 Playwright 回归用到）
+node_modules/
+package-lock.json

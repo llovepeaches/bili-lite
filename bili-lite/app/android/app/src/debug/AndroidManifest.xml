@@ -1,8 +1,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.bililite.bililite">
     <!-- The INTERNET permission is required for development. Specifically,
          the Flutter tool needs it to communicate with the running application
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!--
+      调试构建放开明文流量，让 dart-define 里的 BFF_URL 指向
+      http://电脑IP:8787 时能连上本机 / 局域网里的 BFF。
+      release 构建不合并本文件，正式包禁止明文。
+      （注：XML 注释内不能出现连续两个连字符，故此处不写原始参数写法。）
+    -->
+    <application
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic" />
 </manifest>

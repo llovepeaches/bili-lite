@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../core/api_paths.dart';
+
 /// 一次直连请求的结果。`data` 与 BFF `/api/*` 的 `data` 字段完全同构，
 /// 因此 repository 里的解析函数可以原样复用。
 class DirectResult {
@@ -149,14 +151,14 @@ class BiliDirect {
   /// 路由到各上游接口。path 沿用 BFF 的 `/api/*`，便于上层零改动。
   Future<DirectResult> fetch(String path, Map<String, String> q) async {
     switch (path) {
-      case '/api/feed':
+      case ApiPaths.feed:
         return _cached('feed:${q['ps']}:${q['fresh_idx']}', 60, () => _feed(q));
-      case '/api/rank':
+      case ApiPaths.rank:
         return _cached('rank:${q['rid']}', 300, () => _rank(q));
-      case '/api/popular':
+      case ApiPaths.popular:
         return _cached('popular:${q['pn']}:${q['ps']}', 120,
             () => _popular(q));
-      case '/api/search':
+      case ApiPaths.search:
         final keyword = (q['keyword'] ?? '').trim();
         if (keyword.isEmpty) {
           return const DirectResult(<String, dynamic>{
@@ -167,9 +169,9 @@ class BiliDirect {
           }, 'empty');
         }
         return _cached('search:$keyword:${q['page']}', 120, () => _search(q));
-      case '/api/video':
+      case ApiPaths.video:
         return _cached('video:${q['bvid'] ?? q['aid']}', 600, () => _detail(q));
-      case '/api/reply':
+      case ApiPaths.reply:
         return _cached('reply:${q['aid']}:${q['pn']}:${q['ps']}:${q['sort']}',
             120, () => _reply(q));
       default:

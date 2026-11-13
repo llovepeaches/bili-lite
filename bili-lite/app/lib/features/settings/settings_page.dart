@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/config.dart';
 import '../../core/theme.dart';
+import '../../core/tokens.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../account/account_card.dart';
 import '../../state/globals.dart';
 import '../../state/library_state.dart';
@@ -17,26 +19,17 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   Future<void> _clearAll() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('清空全部本地数据？'),
-        content: const Text('收藏、历史、稍后再看将被全部删除，不可撤销。主题设置不受影响。'),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        actions: <Widget>[
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: TextButton.styleFrom(primary: AppColors.pink),
-              child: const Text('清空')),
-        ],
-      ),
+    final ok = await showConfirmDialog(
+      context,
+      title: '清空全部本地数据？',
+      message: '收藏、历史、稍后再看与搜索历史将被全部删除，不可撤销。主题设置不受影响。',
+      confirmLabel: '清空',
     );
-    if (ok != true) return;
+    if (!ok) return;
     for (final kind in LibraryKind.values) {
       await library.clear(kind);
     }
+    await searchHistory.clear();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('本地数据已清空'), behavior: SnackBarBehavior.floating));
@@ -45,9 +38,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final sub = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.darkSub
-        : AppColors.lightSub;
+    final sub = context.subTextColor;
 
     return Scaffold(
       appBar: AppBar(
@@ -181,8 +172,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               ? (degraded ? '已降级 · 离线快照' : '已连接 B 站')
                               : '未连接',
                           valueColor: connected && !degraded
-                              ? const Color(0xFF34B27B)
-                              : const Color(0xFFE9A23B)),
+                              ? AppStatus.success
+                              : AppStatus.warning),
                       _row('连接方式',
                           ApiConfig.direct
                               ? '原生直连 B 站公开接口'
@@ -376,21 +367,25 @@ class _SettingsPageState extends State<SettingsPage> {
 Widget _row(String label, String value, {Color? valueColor}) {
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        SizedBox(
-            width: 84,
-            child: Text(label,
-                style: const TextStyle(fontSize: 12.5, color: AppColors.lightSub))),
-        Expanded(
-          child: Text(
-            value,
-            textAlign: TextAlign.right,
-            style: TextStyle(fontSize: 12.5, color: valueColor),
+    child: Builder(
+      builder: (context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+              width: 84,
+              child: Text(label,
+                  style: TextStyle(
+                      fontSize: AppFontSize.body,
+                      color: context.subTextColor))),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(fontSize: AppFontSize.body, color: valueColor),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }

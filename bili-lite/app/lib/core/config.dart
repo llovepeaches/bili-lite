@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'api_paths.dart';
+
 /// 服务端地址的多端适配。
 ///
 /// Web 由 BFF 同源托管，直接使用相对路径 `/api/...`，无需跨域配置；
@@ -79,16 +81,27 @@ class ApiConfig {
     return kIsWeb ? '当前同源服务' : baseUrl;
   }
 
-  static const Map<String, String> endpoints = {
-    'health': '/api/health',
-    'meta': '/api/meta',
-    'feed': '/api/feed',
-    'rank': '/api/rank',
-    'popular': '/api/popular',
-    'search': '/api/search',
-    'video': '/api/video',
-    'reply': '/api/reply',
-  };
+  /// 统一的接口路径表已抽到 `core/api_paths.dart`。
+  ///
+  /// 抽出去的原因：路径表与运行环境无关，而本文件需要 Flutter 框架才能
+  /// 判断 kIsWeb / defaultTargetPlatform。留在这里会让 `data/` 层的直连
+  /// 实现间接依赖 Flutter，使得纯 Dart 冒烟脚本无法运行。
+  ///
+  /// 这里保留一组转发常量，避免调用方大范围改动；
+  /// 新增接口请直接改 `ApiPaths`。
+  static const String apiHealth = ApiPaths.health;
+  static const String apiMeta = ApiPaths.meta;
+  static const String apiFeed = ApiPaths.feed;
+  static const String apiRank = ApiPaths.rank;
+  static const String apiPopular = ApiPaths.popular;
+  static const String apiSearch = ApiPaths.search;
+  static const String apiVideo = ApiPaths.video;
+  static const String apiReply = ApiPaths.reply;
+
+  static const Map<String, String> endpoints = ApiPaths.endpoints;
+
+  /// 取接口路径。未知 key 返回空串（调用方不会用到）。
+  static String endpoint(String key) => ApiPaths.endpoint(key);
 
   /// 给用户看的当前服务地址说明
   static String get displayBase {

@@ -1,0 +1,11 @@
+{
+  "name": "bili-lite-app-tools",
+  "private": true,
+  "description": "App 端的开发期校验工具依赖（目前只有 Web 端到端回归用的 Playwright）",
+  "scripts": {
+    "verify:web": "node tool/verify_web.cjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.0"
+  }
+}

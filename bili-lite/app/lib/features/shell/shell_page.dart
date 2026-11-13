@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
+import '../../core/tokens.dart';
 import '../../state/globals.dart';
+import '../../widgets/app_logo.dart';
 import '../../widgets/glass.dart';
 import '../home/home_page.dart';
 import '../library/library_page.dart';
@@ -52,31 +54,44 @@ class _ShellPageState extends State<ShellPage> {
     return LayoutBuilder(builder: (context, constraints) {
       final width = constraints.maxWidth;
       if (!Breakpoints.useRail(width)) {
-        return Scaffold(
-          extendBody: true,
-          body: IndexedStack(index: _index, children: _pages),
-          bottomNavigationBar: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-              child: _GlassDock(index: _index, onSelect: _select),
+        // 窄屏：内容延伸到 dock 之后（玻璃透出背景），但要把 dock 占用的高度
+        // 告诉页面，否则列表最后一行会被盖住、点不到。
+        final media = MediaQuery.of(context);
+        final bottomInset =
+            Breakpoints.dockBottomInset + media.padding.bottom;
+        return ShellLayout(
+          usesDock: true,
+          bottomInset: bottomInset,
+          child: Scaffold(
+            extendBody: true,
+            body: IndexedStack(index: _index, children: _pages),
+            bottomNavigationBar: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                child: _GlassDock(index: _index, onSelect: _select),
+              ),
             ),
           ),
         );
       }
 
       final extended = Breakpoints.railExtended(width);
-      return Scaffold(
-        body: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _GlassSidebar(
-              index: _index,
-              extended: extended,
-              onSelect: _select,
-            ),
-            Expanded(child: IndexedStack(index: _index, children: _pages)),
-          ],
+      return ShellLayout(
+        usesDock: false,
+        bottomInset: 0,
+        child: Scaffold(
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _GlassSidebar(
+                index: _index,
+                extended: extended,
+                onSelect: _select,
+              ),
+              Expanded(child: IndexedStack(index: _index, children: _pages)),
+            ],
+          ),
         ),
       );
     });
@@ -97,8 +112,7 @@ class _GlassSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final sub = dark ? AppColors.darkSub : AppColors.lightSub;
+    final sub = context.subTextColor;
     const double navHeight = _railItemHeight * 4;
 
     return Padding(
@@ -119,8 +133,7 @@ class _GlassSidebar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     const _Logo(),
-                    if (extended) ...<Widget>[
-                      const SizedBox(width: 10),
+                    if (extended) ...<Widget>[                      const SizedBox(width: 10),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
@@ -129,7 +142,7 @@ class _GlassSidebar extends StatelessWidget {
                               style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w800,
-                                  color: dark ? AppColors.darkText : AppColors.lightText)),
+                                  color: context.primaryTextColor)),
                           Text('简洁 · 第三方',
                               style: TextStyle(
                                   fontSize: 10,
@@ -217,13 +230,13 @@ class _GlassSidebar extends StatelessWidget {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: appState.serviceError.isEmpty
-                                  ? const Color(0xFF34B27B)
-                                  : const Color(0xFFE9A23B),
+                                  ? AppStatus.success
+                                  : AppStatus.warning,
                               boxShadow: <BoxShadow>[
                                 BoxShadow(
                                     color: (appState.serviceError.isEmpty
-                                            ? const Color(0xFF34B27B)
-                                            : const Color(0xFFE9A23B))
+                                            ? AppStatus.success
+                                            : AppStatus.warning)
                                         .withOpacity(0.6),
                                     blurRadius: 6),
                               ],
@@ -260,8 +273,7 @@ class _GlassDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final sub = dark ? AppColors.darkSub : AppColors.lightSub;
+    final sub = context.subTextColor;
 
     return LayoutBuilder(builder: (context, constraints) {
       final innerWidth = constraints.maxWidth - 12;
@@ -333,24 +345,6 @@ class _Logo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassPanel(
-      radius: 999,
-      padding: EdgeInsets.zero,
-      tint: AppColors.pink,
-      child: const SizedBox(
-        width: 38,
-        height: 38,
-        child: Center(
-          child: Text(
-            'bi',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1),
-          ),
-        ),
-      ),
-    );
+    return const AppLogo();
   }
 }

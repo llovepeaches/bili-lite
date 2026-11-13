@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/format.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
+import '../../core/tokens.dart';
 import '../../data/models.dart';
 import '../../state/globals.dart';
 import '../../state/library_state.dart';
@@ -82,6 +83,8 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
         _commentError = null;
       });
     } catch (e) {
+      // 重构前加载更多失败时 _pn 没有回退，用户点「重试」会跳过一页评论。
+      if (more) _pn -= 1;
       if (mounted) setState(() => _commentError = e.toString());
     } finally {
       _loadingMore = false;
@@ -524,9 +527,7 @@ class _Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sub = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.darkSub
-        : AppColors.lightSub;
+    final sub = context.subTextColor;
     return Tooltip(
       message: label,
       child: Row(

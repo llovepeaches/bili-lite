@@ -35,24 +35,14 @@ class VideoGrid extends StatelessWidget {
   final Widget? empty;
   final void Function(Video video)? onLongPress;
 
-  /// 依据实际卡片宽度算宽高比：玻璃卡片有 8px 内边距，封面比卡片窄，
-  /// 文字区高度基本固定。比写死 ratio 更紧凑，所有断点下都不会留白过大。
-  double _aspect(double totalWidth, int columns, double gutter) {
-    const double spacing = 14.0;
-    const double inset = 8.0;
-    const double textArea = 104.0; // 卡片上下内边距 + 标题两行 + UP 主 + 数据行
-    final cardWidth =
-        (totalWidth - gutter * 2 - spacing * (columns - 1)) / columns;
-    final coverHeight = (cardWidth - inset * 2) * 9 / 16;
-    return cardWidth / (coverHeight + textArea);
-  }
-
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
       final width = constraints.maxWidth;
       final columns = Breakpoints.columns(width);
       final gutter = Breakpoints.gutter(width);
+      // 窄屏底部有悬浮 dock，末尾要留出它的高度，否则最后一行卡片被盖住。
+      final bottomInset = ShellLayout.of(context).bottomInset;
 
       return RefreshIndicator(
         color: AppColors.pink,
@@ -82,9 +72,10 @@ class VideoGrid extends StatelessWidget {
                   sliver: SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: columns,
-                      crossAxisSpacing: 14,
+                      crossAxisSpacing: Breakpoints.gridSpacing,
                       mainAxisSpacing: 12,
-                      childAspectRatio: _aspect(width, columns, gutter),
+                      childAspectRatio:
+                          Breakpoints.cardAspectRatio(width, columns, gutter),
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) => VideoCard(
@@ -113,7 +104,7 @@ class VideoGrid extends StatelessWidget {
                   ),
                 ),
               SliverToBoxAdapter(
-                child: SizedBox(height: hasMore ? 12 : 28),
+                child: SizedBox(height: (hasMore ? 12 : 28) + bottomInset),
               ),
             ],
           ),

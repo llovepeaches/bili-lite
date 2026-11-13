@@ -1,12 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.bililite.bililite">
     <!-- 访问本地/局域网 BFF 需要网络权限；release 构建不会合并 debug manifest，故写在此处 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!--
+      重构前这里是 "true"：正式包允许任意域名走明文 HTTP。
+      原生端直连 B 站走的是 HTTPS，明文只在「连本地 / 局域网 BFF 调试」时
+      才需要，而那条链路只存在于 debug 构建（见 src/debug/AndroidManifest.xml）。
+      因此正式包默认关闭明文，调试包用 tools:replace 单独放开。
+    -->
    <application
         android:label="Bili Lite"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false"
+        tools:replace="android:usesCleartextTraffic">
         <activity
             android:name=".MainActivity"
             android:exported="true"

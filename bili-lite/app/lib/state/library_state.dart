@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/storage.dart';
 import '../data/models.dart';
 
 enum LibraryKind { favorites, history, watchLater }
@@ -47,6 +47,9 @@ class LibraryState extends ChangeNotifier {
   bool _loaded = false;
   bool get loaded => _loaded;
 
+  /// 本地持久化是否真的落到磁盘。false 表示本平台只有内存兜底。
+  bool get storagePersistent => LocalStore.instance.persistent;
+
   List<LibraryItem> of(LibraryKind kind) =>
       List<LibraryItem>.unmodifiable(_data[kind] ?? <LibraryItem>[]);
 
@@ -67,19 +70,25 @@ class LibraryState extends ChangeNotifier {
       kind == LibraryKind.history ? _maxHistory : _maxLists;
 
   Future<void> load() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      for (final kind in LibraryKind.values) {
-        final raw = prefs.getString(keyOf(kind));
-        if (raw == null || raw.isEmpty) continue;
-        final decoded = json.decode(raw) as List<dynamic>;
+    await LocalStore.instance.init();
+    final store = LocalStore.instance;
+    for (final kind in LibraryKind.values) {
+      final raw = store.getString(keyOf(kind));
+      // 重构前这里只在有值时覆盖 _data，导致「清空后再 load」会把内存里的
+      // 旧列表重新写回，看起来像清空无效。现在无论有无数据都先重置。
+      _data[kind] = <LibraryItem>[];
+      if (raw == null || raw.isEmpty) continue;
+      try {
+        final decoded = json.decode(raw);
+        if (decoded is! List) continue;
         _data[kind] = decoded
             .map((e) => LibraryItem.fromJson(e))
             .where((item) => item.video.bvid.isNotEmpty)
             .toList();
+      } catch (_) {
+        // 单条列表数据损坏时跳过该列表，不让整个 App 起不来
+        _data[kind] = <LibraryItem>[];
       }
-    } catch (_) {
-      // 数据损坏时静默重置，不让 App 起不来
     }
     _loaded = true;
     notifyListeners();
@@ -92,13 +101,10 @@ class LibraryState extends ChangeNotifier {
   bool inWatchLater(String bvid) => has(LibraryKind.watchLater, bvid);
 
   Future<void> _persist(LibraryKind kind) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        keyOf(kind),
-        json.encode(_data[kind]!.map((e) => e.toJson()).toList()),
-      );
-    } catch (_) {}
+    await LocalStore.instance.setString(
+      keyOf(kind),
+      json.encode(_data[kind]!.map((e) => e.toJson()).toList()),
+    );
   }
 
   void _insert(LibraryKind kind, Video video) {

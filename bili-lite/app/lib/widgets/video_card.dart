@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/format.dart';
 import '../core/glass_theme.dart';
 import '../core/theme.dart';
+import '../core/tokens.dart';
 import '../data/models.dart';
 import 'cover_image.dart';
 import 'glass.dart';
@@ -32,11 +33,10 @@ class _VideoCardState extends State<VideoCard> {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final sub = dark ? AppColors.darkSub : AppColors.lightSub;
     final glass = GlassTheme.of(context).enabled;
-    final video = widget.video;
 
+    // 悬停 / 按下只影响外层装饰。卡片内容（封面、标题、统计）拆到独立
+    // widget 里，避免鼠标划过一屏卡片时把上百棵子树重建一遍。
     return Listener(
       onPointerDown: (_) => setState(() => _pressed = true),
       onPointerUp: (_) => setState(() => _pressed = false),
@@ -51,14 +51,49 @@ class _VideoCardState extends State<VideoCard> {
           transform: Matrix4.identity()
             ..translate(0.0, glass && _hover && !_pressed ? -4.0 : 0.0)
             ..scale(_pressed ? 0.975 : 1.0),
-          child: GlassPanel(
+          child: _VideoCardContent(
+            video: widget.video,
+            rank: widget.rank,
+            elevated: _hover,
+            onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 卡片内容层。与外层装饰分离，hover / pressed 变化不再重建它。
+class _VideoCardContent extends StatelessWidget {
+  const _VideoCardContent({
+    required this.video,
+    required this.rank,
+    required this.elevated,
+    required this.onTap,
+    this.onLongPress,
+  });
+
+  final Video video;
+  final int rank;
+  final bool elevated;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final sub = context.subTextColor;
+    final glass = GlassTheme.of(context).enabled;
+
+    return GlassPanel(
             radius: 22,
             padding: const EdgeInsets.all(8),
             // 内容让位：卡片内部几乎全透，只留一圈折射亮边，让封面成为主体。
             fillScale: 0.50,
-            elevated: _hover,
-            onTap: widget.onTap,
-            onLongPress: widget.onLongPress,
+            elevated: elevated,
+            onTap: onTap,
+            onLongPress: onLongPress,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -105,11 +140,11 @@ class _VideoCardState extends State<VideoCard> {
                             ),
                           ),
                         ),
-                      if (widget.rank > 0)
+                      if (rank > 0)
                         Positioned(
                           left: 6,
                           top: 6,
-                          child: _RankPill(rank: widget.rank),
+                          child: _RankPill(rank: rank),
                         )
                       else if (video.reason.isNotEmpty)
                         Positioned(
@@ -192,10 +227,7 @@ class _VideoCardState extends State<VideoCard> {
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
+        );
   }
 }
 
@@ -207,9 +239,7 @@ class _MiniStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sub = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.darkSub
-        : AppColors.lightSub;
+    final sub = context.subTextColor;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../../core/config.dart';
 import '../../core/oauth_launcher.dart';
 import '../../core/theme.dart';
+import '../../core/tokens.dart';
 import '../../state/auth_session.dart';
 import '../../state/globals.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/state_views.dart';
 
@@ -45,34 +47,20 @@ class _AccountCardState extends State<AccountCard> {
   }
 
   Future<void> _signOut() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('退出 B 站账号？'),
-        content: const Text(
-            '将删除本机保存的 access_token、refresh_token 与账号资料，不可撤销。'
-            '这不会解除 B 站侧的授权，如需彻底解除请到 B 站账号设置里的授权管理操作。'),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        actions: <Widget>[
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: TextButton.styleFrom(primary: AppColors.pink),
-              child: const Text('退出登录')),
-        ],
-      ),
+    final ok = await showConfirmDialog(
+      context,
+      title: '退出 B 站账号？',
+      message: '将删除本机保存的 access_token、refresh_token 与账号资料，不可撤销。'
+          '这不会解除 B 站侧的授权，如需彻底解除请到 B 站账号设置里的授权管理操作。',
+      confirmLabel: '退出登录',
     );
-    if (ok != true) return;
+    if (!ok) return;
     await authSession.signOut();
   }
 
   @override
   Widget build(BuildContext context) {
-    final sub = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.darkSub
-        : AppColors.lightSub;
+    final sub = context.subTextColor;
     return AnimatedBuilder(
       animation: authSession,
       builder: (_, __) => GlassPanel(
@@ -97,7 +85,7 @@ class _AccountCardState extends State<AccountCard> {
             _body(context, sub),
             if (authSession.error.isNotEmpty) ...<Widget>[
               const SizedBox(height: 10),
-              _notice(authSession.error, const Color(0xFFD98032)),
+              _notice(authSession.error, AppStatus.danger),
             ],
             const SizedBox(height: 12),
             _boundary(sub),
@@ -132,7 +120,7 @@ class _AccountCardState extends State<AccountCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _notice('未配置官方开放平台凭证，登录入口已停用。', const Color(0xFFD98032)),
+        _notice('未配置官方开放平台凭证，登录入口已停用。', AppStatus.danger),
         const SizedBox(height: 10),
         _text(
           '官方 OAuth 2.0 要求先在 openhome.bilibili.com 完成开发者入驻、创建应用、'
@@ -161,7 +149,7 @@ class _AccountCardState extends State<AccountCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _notice('授权服务不可用。', const Color(0xFFD98032)),
+        _notice('授权服务不可用。', AppStatus.danger),
         const SizedBox(height: 10),
         _text(
           '官方 OAuth 的 client_secret 只能保存在服务端，客户端无法独立完成授权码换 token。'
@@ -299,8 +287,8 @@ class _AccountCardState extends State<AccountCard> {
                     style: TextStyle(
                         fontSize: 11.5,
                         color: t.isExpired
-                            ? const Color(0xFFD98032)
-                            : const Color(0xFF34B27B)),
+                            ? AppStatus.danger
+                            : AppStatus.success),
                   ),
                 ],
               ),
@@ -350,7 +338,7 @@ class _AccountCardState extends State<AccountCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _notice('登录未完成。', const Color(0xFFD98032)),
+        _notice('登录未完成。', AppStatus.danger),
         const SizedBox(height: 12),
         GlassChip(
           label: '返回',

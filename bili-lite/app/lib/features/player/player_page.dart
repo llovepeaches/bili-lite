@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/bili_player.dart';
 import '../../core/theme.dart';
+import '../../core/tokens.dart';
 import '../../data/models.dart';
 import '../../widgets/glass.dart';
 import 'player_view.dart';
@@ -42,13 +43,16 @@ class PlayerPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final sub = dark ? AppColors.darkSub : AppColors.lightSub;
+    final sub = context.subTextColor;
     final embedUrl = BiliPlayer.embedUrl(
       bvid: video.bvid,
       aid: video.aid,
       page: page,
     );
-    final embedded = buildOfficialPlayer(embedUrl);
+    // 能否内嵌由平台文件自己声明；即使声明可内嵌，实际实现仍可能返回
+    // null（例如 webview_flutter 在当前环境不可用），此时同样降级。
+    final embedded =
+        kCanEmbedOfficialPlayer ? buildOfficialPlayer(embedUrl) : null;
 
     return Scaffold(
       backgroundColor: Colors.transparent,

@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
+import '../core/api_paths.dart';
 import '../core/config.dart';
+import '../core/partitions.dart';
 import 'bili_direct.dart';
 import 'models.dart';
 
@@ -92,14 +94,14 @@ class ApiClient {
     T Function(dynamic raw) parse,
   ) async {
     // 分区表等静态配置不必联网，直接复用快照里的同一份定义。
-    if (path == '/api/meta') {
+    if (path == ApiPaths.meta) {
       final snap = await _loadSnapshot();
       return ApiResponse<T>(
         data: parse(_payload(snap, path, query ?? const <String, String>{})),
         source: 'static',
       );
     }
-    if (path == '/api/health') {
+    if (path == ApiPaths.health) {
       return ApiResponse<T>(data: parse(await _directHealth()), source: 'bili');
     }
 
@@ -135,7 +137,6 @@ class ApiClient {
       'uptime': 0,
     };
   }
-
   // ------------------------------------------------------------------
   // 内置离线数据源：与 BFF 的 /api/* 返回结构完全同构
   // ------------------------------------------------------------------
@@ -166,7 +167,7 @@ class ApiClient {
   dynamic _payload(
       Map<String, dynamic> s, String path, Map<String, String> q) {
     switch (path) {
-      case '/api/health':
+      case ApiPaths.health:
         return <String, dynamic>{
           'version': '1.2.0',
           'mockMode': true,
@@ -176,7 +177,7 @@ class ApiClient {
           'webBuild': false,
           'uptime': 0,
         };
-      case '/api/meta':
+      case ApiPaths.meta:
         return <String, dynamic>{
           'partitions': _partitions,
           'replySorts': <Map<String, dynamic>>[
@@ -184,19 +185,19 @@ class ApiClient {
             <String, dynamic>{'value': 0, 'label': '按时间'},
           ],
         };
-      case '/api/feed':
+      case ApiPaths.feed:
         return s['feed'] ?? <dynamic>[];
-      case '/api/popular':
+      case ApiPaths.popular:
         return s['popular'] ?? <dynamic>[];
-      case '/api/rank':
+      case ApiPaths.rank:
         return s['rank'] ??
             <String, dynamic>{'note': '', 'list': <dynamic>[]};
-      case '/api/reply':
+      case ApiPaths.reply:
         return s['reply'] ??
             <String, dynamic>{'count': 0, 'list': <dynamic>[]};
-      case '/api/search':
+      case ApiPaths.search:
         return _search(s, q['keyword'] ?? '');
-      case '/api/video':
+      case ApiPaths.video:
         return _detail(s, q['bvid'] ?? '', q['aid'] ?? '');
       default:
         return <String, dynamic>{};
@@ -291,28 +292,11 @@ class ApiClient {
     return base;
   }
 
-  static const List<Map<String, dynamic>> _partitions =
-      <Map<String, dynamic>>[
-    <String, dynamic>{'rid': 0, 'name': '全站'},
-    <String, dynamic>{'rid': 1, 'name': '动画'},
-    <String, dynamic>{'rid': 168, 'name': '国创'},
-    <String, dynamic>{'rid': 3, 'name': '音乐'},
-    <String, dynamic>{'rid': 129, 'name': '舞蹈'},
-    <String, dynamic>{'rid': 4, 'name': '游戏'},
-    <String, dynamic>{'rid': 36, 'name': '知识'},
-    <String, dynamic>{'rid': 188, 'name': '科技'},
-    <String, dynamic>{'rid': 234, 'name': '运动'},
-    <String, dynamic>{'rid': 223, 'name': '汽车'},
-    <String, dynamic>{'rid': 160, 'name': '生活'},
-    <String, dynamic>{'rid': 211, 'name': '美食'},
-    <String, dynamic>{'rid': 217, 'name': '动物圈'},
-    <String, dynamic>{'rid': 119, 'name': '鬼畜'},
-    <String, dynamic>{'rid': 155, 'name': '时尚'},
-    <String, dynamic>{'rid': 202, 'name': '资讯'},
-    <String, dynamic>{'rid': 5, 'name': '娱乐'},
-    <String, dynamic>{'rid': 181, 'name': '影视'},
-    <String, dynamic>{'rid': 177, 'name': '纪录片'},
-    <String, dynamic>{'rid': 23, 'name': '电影'},
-    <String, dynamic>{'rid': 11, 'name': '电视剧'},
-  ];
+  /// 内置离线快照里的分区表。
+  /// 重构前这里和 app_state.dart 各存了一份，且前者 20 项、后者 12 项，
+  /// 导致离线 / 在线两种模式下排行榜分区条数量不一致。现在统一用
+  /// `BiliPartitions.items` 这一份数据源。
+  static List<Map<String, dynamic>> get _partitions => BiliPartitions.items
+      .map((p) => <String, dynamic>{'rid': p.rid, 'name': p.name})
+      .toList(growable: false);
 }

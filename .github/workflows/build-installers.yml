@@ -53,8 +53,51 @@ env:
   PUBLISH: ${{ inputs.publish || 'true' }}
 
 jobs:
+  checks:
+    name: Static analysis and unit tests
+    # 质量守门：analyze / test 不通过就不该产出安装包。
+    # 重构前这条流水线只负责"编译"，任何静态错误都要等装到手机上才发现。
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flutter ${{ env.FLUTTER_VERSION }}
+        uses: ./.github/actions/setup-flutter
+        with:
+          version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Install Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: flutter pub get
+        working-directory: bili-lite/app
+        run: flutter pub get
+
+      - name: flutter analyze
+        working-directory: bili-lite/app
+        run: |
+          set -euo pipefail
+          # --fatal-infos 让警告也失败：重构收敛了风格问题，不该再积累新的。
+          flutter analyze --fatal-infos --fatal-warnings
+
+      - name: flutter test
+        working-directory: bili-lite/app
+        run: flutter test --reporter=expanded
+
+      - name: BFF syntax check and OAuth flow test
+        working-directory: bili-lite/server
+        run: |
+          set -euo pipefail
+          npm run check
+          npm run verify:oauth
+
   android:
     name: Android release APK
+    needs: [checks]
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -177,6 +220,7 @@ jobs:
 
   windows:
     name: Windows x64 installer (exe)
+    needs: [checks]
     runs-on: windows-2022
     timeout-minutes: 45
     steps:
@@ -297,6 +341,7 @@ jobs:
 
   web:
     name: Web bundle + BFF package
+    needs: [checks]
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:

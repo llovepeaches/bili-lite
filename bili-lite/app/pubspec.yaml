@@ -13,7 +13,10 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.5
   http: ^0.13.5
-  shared_preferences: ^2.0.15
+  # 必须 >=2.1.0：2.1.x 才是完整的 federated 实现，Windows / Linux /
+  # macOS 都有原生插件。2.0.x 只有 Android / iOS / Web，桌面端会退化为
+  # 无持久化能力（表现为「本地数据存不住」）。
+  shared_preferences: ^2.1.0
   url_launcher: ^6.1.5
 
 dev_dependencies:

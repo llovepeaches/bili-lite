@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../core/navigation.dart';
+import '../../core/partitions.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
+import '../../core/tokens.dart';
 import '../../data/models.dart';
 import '../../state/globals.dart';
+import '../../widgets/app_logo.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/page_header_card.dart';
 import '../../widgets/state_views.dart';
 import '../../widgets/video_grid.dart';
-import '../detail/detail_page.dart';
 
 /// 首页：推荐 / 热门 / 排行榜三个频道，各自缓存数据与分页游标。
 class HomePage extends StatefulWidget {
@@ -83,6 +87,9 @@ class _HomePageState extends State<HomePage>
           _freshIdx = 1;
         }
         final res = await repo.feed(ps: 20, freshIdx: _freshIdx);
+        // 重构前这里 await 之后直接 setState，页面若在请求返回前被销毁
+        // （用户切页 / 退出 App）就会抛 "setState called after dispose"。
+        if (!mounted) return;
         setState(() {
           _videos[0] = more ? _merge(_videos[0]!, res.data) : res.data;
           _sources[0] = res.source;
@@ -95,6 +102,7 @@ class _HomePageState extends State<HomePage>
           _popularPage = 1;
         }
         final res = await repo.popular(pn: _popularPage, ps: 20);
+        if (!mounted) return;
         setState(() {
           _videos[1] = more ? _merge(_videos[1]!, res.data) : res.data;
           _sources[1] = res.source;
@@ -102,6 +110,7 @@ class _HomePageState extends State<HomePage>
         });
       } else {
         final res = await repo.rank(rid: _rid);
+        if (!mounted) return;
         setState(() {
           _videos[2] = res.data.list;
           _rankNote = res.data.note;
@@ -110,6 +119,7 @@ class _HomePageState extends State<HomePage>
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _errors[tab] = e.toString());
     } finally {
       _isLoadingMore = false;
@@ -124,10 +134,7 @@ class _HomePageState extends State<HomePage>
   }
 
   void _openDetail(Video video) {
-    library.addHistory(video);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => VideoDetailPage(video: video)),
-    );
+    openVideoDetail(context, video);
   }
 
   bool _hasMore(int tab) {
@@ -144,7 +151,7 @@ class _HomePageState extends State<HomePage>
         flexibleSpace: const GlassBar(),
         title: Row(
           children: const <Widget>[
-            _GlassLogo(),
+            AppLogo(size: 28),
             SizedBox(width: 9),
             Text('Bili Lite'),
           ],
@@ -225,104 +232,48 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildHeader(int tab) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final sub = dark ? AppColors.darkSub : AppColors.lightSub;
-    final titles = <String>['为你推荐', '综合热门', '全站排行榜'];
-    final notes = <String>[
+    const titles = <String>['为你推荐', '综合热门', '全站排行榜'];
+    const notes = <String>[
       '实时拉取 B 站公开推荐流，下拉可换一批',
       '按综合热度排序的近期热门稿件',
-      _rankNote.isNotEmpty ? _rankNote : '根据内容质量与近期数据综合展示',
+      '根据内容质量与近期数据综合展示',
     ];
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-      child: GlassPanel(
-        radius: 20,
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-        child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Flexible(
-                child: Text(
-                  tab == 2 && _rid != 0
-                      ? '${_partitionName(_rid)}排行榜'
-                      : titles[tab],
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text('共 ${_videos[tab]!.length} 条',
-                  style: TextStyle(fontSize: 11, color: sub)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(notes[tab], style: TextStyle(fontSize: 11.5, color: sub)),
-          if (tab == 2) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 34,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: appState.partitions.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, index) {
-                  final p = appState.partitions[index];
-                  final selected = p.rid == _rid;
-                  return GlassChip(
-                    label: p.name,
-                    selected: selected,
-                    radius: 16,
-                    tint: AppColors.pink,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    labelStyle: TextStyle(
-                        fontSize: 12,
-                        color: selected ? AppColors.pink : sub,
-                        fontWeight:
-                            selected ? FontWeight.w700 : FontWeight.w500),
-                    onTap: () => _changePartition(p.rid),
-                  );
-                },
-              ),
-            ),
-          ],
-          const SizedBox(height: 6),
-        ],
-        ),
-      ),
+    return PageHeaderCard(
+      title: tab == 2 && _rid != 0
+          ? '${BiliPartitions.nameOf(_rid)}排行榜'
+          : titles[tab],
+      count: '共 ${_videos[tab]!.length} 条',
+      subtitle: tab == 2 && _rankNote.isNotEmpty ? _rankNote : notes[tab],
+      subtitleWidget: tab == 2 ? _partitionBar() : null,
     );
   }
 
-  String _partitionName(int rid) {
-    for (final p in appState.partitions) {
-      if (p.rid == rid) return p.name;
-    }
-    return '分区';
-  }
-}
-
-class _GlassLogo extends StatelessWidget {
-  const _GlassLogo();
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassPanel(
-      radius: 9,
-      padding: EdgeInsets.zero,
-      tint: AppColors.pink,
-      child: const SizedBox(
-        width: 28,
-        height: 28,
-        child: Center(
-          child: Text('bi',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.8)),
-        ),
+  /// 排行榜频道的分区切换条。
+  Widget _partitionBar() {
+    final sub = context.subTextColor;
+    return SizedBox(
+      height: 34,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: appState.partitions.length,
+        separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (context, index) {
+          final p = appState.partitions[index];
+          final selected = p.rid == _rid;
+          return GlassChip(
+            label: p.name,
+            selected: selected,
+            radius: 16,
+            tint: AppColors.pink,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            labelStyle: TextStyle(
+                fontSize: AppFontSize.body,
+                color: selected ? AppColors.pink : sub,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500),
+            onTap: () => _changePartition(p.rid),
+          );
+        },
       ),
     );
   }

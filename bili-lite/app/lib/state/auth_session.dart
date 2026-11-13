@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/storage.dart';
 import '../data/oauth_api.dart';
 
 enum AuthStatus {
@@ -38,7 +38,11 @@ enum AuthStatus {
 ///
 /// 注意：shared_preferences 不是硬件加密存储。真机发布建议把 token 迁到
 /// iOS Keychain / Android Keystore；当前实现优先保证六端零原生插件可编译。
-/// Windows 上该插件没有原生实现，会自动退化为「仅本次会话有效」并在 UI 提示。
+///
+/// 跨端一致性：shared_preferences 2.1.x 在 Android / iOS / macOS / Windows /
+/// Linux / Web 六端都有原生实现，本地登录态在所有端都能跨启动保留。
+/// 只有在插件确实不可用时（[LocalStore.persistent] 为 false）才退化为
+/// 「仅本次会话有效」，并由 UI 如实告知——不再按平台写死结论。
 class AuthSession extends ChangeNotifier {
   AuthSession();
 
@@ -68,16 +72,15 @@ class AuthSession extends ChangeNotifier {
   bool _busy = false;
   bool get busy => _busy;
 
-  bool _storageAvailable = true;
-
-  /// 本地持久化是否可用（Windows 上 shared_preferences 无原生实现时为 false）
-  bool get storageAvailable => _storageAvailable;
+  /// 本地持久化是否可用。false 时登录态仅在本次会话有效。
+  bool get storageAvailable => LocalStore.instance.persistent;
 
   bool get signedIn => _status == AuthStatus.signedIn && _tokens != null;
 
   bool get sandbox => _config?.sandbox == true;
 
   Future<void> init() async {
+    await LocalStore.instance.init();
     await _restore();
     await refreshConfig();
   }
@@ -86,29 +89,19 @@ class AuthSession extends ChangeNotifier {
   // 本地持久化
   // ------------------------------------------------------------------
 
-  Future<SharedPreferences?> _prefs() async {
-    try {
-      return await SharedPreferences.getInstance();
-    } catch (_) {
-      _storageAvailable = false;
-      return null;
-    }
-  }
-
   Future<void> _restore() async {
-    final prefs = await _prefs();
-    if (prefs == null) return;
+    final store = LocalStore.instance;
+    final access = store.getString(_kAccess) ?? '';
+    final refresh = store.getString(_kRefresh) ?? '';
+    if (access.isEmpty) return;
     try {
-      final access = prefs.getString(_kAccess) ?? '';
-      final refresh = prefs.getString(_kRefresh) ?? '';
-      if (access.isEmpty) return;
       _tokens = OAuthTokens(
         accessToken: access,
         refreshToken: refresh,
-        expiresAt: prefs.getInt(_kExpires) ?? 0,
-        scopes: prefs.getStringList(_kScopes) ?? const <String>[],
+        expiresAt: store.getInt(_kExpires) ?? 0,
+        scopes: store.getStringList(_kScopes) ?? const <String>[],
       );
-      final rawUser = prefs.getString(_kUser) ?? '';
+      final rawUser = store.getString(_kUser) ?? '';
       if (rawUser.isNotEmpty) {
         _user = BiliUser.fromJson(
             Map<String, dynamic>.from(json.decode(rawUser) as Map));
@@ -120,27 +113,22 @@ class AuthSession extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
-    final prefs = await _prefs();
-    if (prefs == null) return;
-    try {
-      final t = _tokens;
-      if (t == null) {
-        await prefs.remove(_kAccess);
-        await prefs.remove(_kRefresh);
-        await prefs.remove(_kExpires);
-        await prefs.remove(_kScopes);
-        await prefs.remove(_kUser);
-        return;
-      }
-      await prefs.setString(_kAccess, t.accessToken);
-      await prefs.setString(_kRefresh, t.refreshToken);
-      await prefs.setInt(_kExpires, t.expiresAt);
-      await prefs.setStringList(_kScopes, t.scopes);
-      final u = _user;
-      await prefs.setString(_kUser, u == null ? '' : json.encode(u.toJson()));
-    } catch (_) {
-      _storageAvailable = false;
+    final store = LocalStore.instance;
+    final t = _tokens;
+    if (t == null) {
+      await store.remove(_kAccess);
+      await store.remove(_kRefresh);
+      await store.remove(_kExpires);
+      await store.remove(_kScopes);
+      await store.remove(_kUser);
+      return;
     }
+    await store.setString(_kAccess, t.accessToken);
+    await store.setString(_kRefresh, t.refreshToken);
+    await store.setInt(_kExpires, t.expiresAt);
+    await store.setStringList(_kScopes, t.scopes);
+    final u = _user;
+    await store.setString(_kUser, u == null ? '' : json.encode(u.toJson()));
   }
 
   // ------------------------------------------------------------------

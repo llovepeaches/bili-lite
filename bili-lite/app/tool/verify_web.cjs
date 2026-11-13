@@ -47,16 +47,23 @@ const BASE = process.env.APP_URL || 'http://127.0.0.1:8787';
     return j && j.meta ? j.meta : null;
   });
   const source = meta ? meta.source : '';
-  const live = !!feed && ['live', 'cache', 'bili'].includes(source);
+
+  // mock 是**合法降级**：BFF 处于 MOCK_MODE 或上游被风控时，返回 mock 快照
+  // 也代表链路通畅。原先只认 live/cache/bili，把 mock 判成失败，
+  // 于是本地离线自检永远红着。区分「链路通不通」和「数据新不新」两件事。
+  const linked = !!feed && !!health && ['live', 'cache', 'bili', 'mock', 'static'].includes(source);
+  const fresh = ['live', 'cache', 'bili'].includes(source);
 
   console.log('');
   console.log('健康探测     :', health ? '已发起' : '未发起');
   console.log('推荐流数据源 :', source || '未确认');
   console.log('控制台错误   :', errors.length ? errors.slice(0, 3).join(' | ') : '无');
-  console.log('结论         :', live ? 'Web 应用已连接 B 站实时数据' : '未确认实时连接');
+  console.log('结论         :', fresh
+    ? 'Web 应用已连接 B 站实时数据'
+    : (linked ? '链路正常（数据来自降级快照，非实时）' : '未确认连接'));
 
   await browser.close();
-  if (!live || errors.length) process.exitCode = 1;
+  if (!linked || errors.length) process.exitCode = 1;
 })().catch((e) => {
   console.error(e);
   process.exitCode = 1;

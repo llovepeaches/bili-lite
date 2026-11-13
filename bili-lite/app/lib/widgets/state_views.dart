@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../core/format.dart';
 import '../core/glass_theme.dart';
+import '../core/responsive.dart';
 import '../core/theme.dart';
+import '../core/tokens.dart';
 import 'glass.dart';
 
 /// 数据来源小标签：实时 / 缓存 / 离线，让第三方客户端的数据状态透明。
@@ -18,8 +20,7 @@ class SourceBadge extends StatelessWidget {
     if (source.isEmpty || source == 'static' || source == 'empty') {
       return const SizedBox.shrink();
     }
-    final color = Fmt.sourceColor(
-        source, Theme.of(context).brightness == Brightness.dark);
+    final color = Fmt.sourceColor(source);
     return GlassPill(
       radius: 7,
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -58,19 +59,26 @@ class LoadingGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      physics: const NeverScrollableScrollPhysics(),
-      shrinkWrap: true,
-      padding: const EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 12,
-        childAspectRatio: 0.82,
-      ),
-      itemCount: itemCount,
-      itemBuilder: (_, __) => const _SkeletonCard(),
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      final gutter = Breakpoints.gutter(width);
+      return GridView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        shrinkWrap: true,
+        padding: EdgeInsets.symmetric(horizontal: gutter, vertical: 10),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          crossAxisSpacing: Breakpoints.gridSpacing,
+          mainAxisSpacing: 12,
+          // 重构前这里写死 0.82，与 VideoGrid 的动态算法不一致，
+          // 数据加载完成的瞬间整片卡片会缩放一次。现在共用同一套算法。
+          childAspectRatio:
+              Breakpoints.cardAspectRatio(width, columns, gutter),
+        ),
+        itemCount: itemCount,
+        itemBuilder: (_, __) => const _SkeletonCard(),
+      );
+    });
   }
 }
 
@@ -158,9 +166,7 @@ class ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sub = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.darkSub
-        : AppColors.lightSub;
+    final sub = context.subTextColor;
     return Center(
       child: GlassPanel(
         radius: 22,
@@ -209,9 +215,7 @@ class EmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sub = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.darkSub
-        : AppColors.lightSub;
+    final sub = context.subTextColor;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 48),

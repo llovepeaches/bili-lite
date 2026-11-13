@@ -209,6 +209,7 @@ bili-lite/
 ├── README.md
 ├── docs/
 │   ├── 多端构建.md          # 六个平台各自的构建与真机调试命令
+│   ├── 重构说明.md          # 一次全量重构的逐条问题清单与改进方案
 │   └── preview/             # 20 张页面效果截图（含 6 张 OAuth 链路）
 ├── server/                  # BFF（零依赖）
 │   ├── package.json
@@ -228,12 +229,17 @@ bili-lite/
     ├── android/ ios/ linux/ macos/ windows/
     └── lib/
         ├── main.dart / app.dart   # main 启动时消费 ?oauth_ticket=
-        ├── core/            # 配置、主题、透镜调色板、播放器 URL、OAuth 跳转
+        ├── core/            # 配置、令牌、分区表、路径表、存储门面、导航、主题
         │   ├── glass_theme.dart  # GlassConfig / GlassScope / GlassClock / GlassPalette
+        │   ├── tokens.dart       # 设计令牌：状态色 / 字号 / 圆角 / 间距 / 取色扩展
+        │   ├── storage.dart      # LocalStore：本地持久化门面 + 能力探测
+        │   ├── partitions.dart   # 分区表单一数据源
+        │   ├── api_paths.dart    # 接口路径单一数据源（纯 Dart）
+        │   ├── navigation.dart   # 详情跳转与收藏切换的统一入口
         │   └── oauth_launcher.dart  # Web 同页导航 / 原生系统浏览器（条件导出）
         ├── data/            # models / api_client / bili_direct / oauth_api / repository
-        ├── state/           # 主题+玻璃 / 本地库 / auth_session（登录态持久化）/ 单例
-        ├── widgets/         # 封面、卡片、网格、骨架屏、状态视图、glass.dart
+        ├── state/           # 主题+玻璃 / 本地库 / auth_session（登录态持久化）/ 搜索历史 / 单例
+        ├── widgets/         # 封面、卡片、网格、骨架屏、状态视图、glass、统一 Logo/对话框/页头
         └── features/        # shell / home / search / detail / library / player / account / settings
 ```
 
@@ -301,9 +307,14 @@ read -rsp 'BILI_CLIENT_SECRET: ' BILI_CLIENT_SECRET; export BILI_CLIENT_SECRET; 
 | BFF 环境变量 | `client_secret` | 只在服务端进程内，不进响应 / 日志 / Git |
 
 **明确不存**：账号密码、Cookie、`SESSDATA`、`bili_jct`、`client_secret`、授权码 `code`。
-`SharedPreferences` 不是硬件加密存储——真机发布建议把 token 迁到 iOS Keychain / Android Keystore；
-Windows 上该插件无原生实现，会自动退化为「仅本次会话有效」并在 UI 提示。
+`SharedPreferences` 不是硬件加密存储——真机发布建议把 token 迁到 iOS Keychain / Android Keystore。
 收藏 / 历史 / 稍后再看 / 搜索历史继续留在本机，**不关联账号、不上传**。
+
+> **关于跨端持久化**：本地存储统一走 `app/lib/core/storage.dart` 的 `LocalStore` 门面，
+> 启动时主动探测插件是否真的可用，结果通过设置页如实展示。
+> `shared_preferences` 需 **≥ 2.1.0**（工程已锁定 `^2.1.0`）才有完整的六端原生实现
+> （Windows / Linux / macOS 在 2.0.x 上是缺失的）。若探测失败，会退化为
+> 「仅本次会话有效」并明确提示，而不是静默丢数据。
 
 ### 演示授权模式（仅本地自检）
 
@@ -327,13 +338,19 @@ cd app && NODE_PATH=$(npm root -g) node tool/verify_oauth_web.cjs   # Web 端到
 
 ---
 
+## 重构记录
+
+本工程完成过一次覆盖全项目的重构（统一存储门面、设计令牌收敛、分区表去重、重复组件抽取、
+跨端明文流量策略收紧、深色模式对比度修复、分页与生命周期缺陷修复等）。
+逐条的问题清单与改进方案见 **[docs/重构说明.md](docs/重构说明.md)**。
+
 ## 已知限制
 
 - **评论条数**：未登录的访客身份下，B 站 `/x/v2/reply` 通常只开放少量热评（实测 3 条，`is_end=true`）。已验证 WBI 签名的新接口结果相同，属于上游策略而非实现问题。
 - **播放依赖官方外链播放器**：Web 端在应用内以 iframe 嵌入，原生端用系统浏览器打开同一个官方播放器 URL（Flutter 3.0 六端没有统一的 WebView 插件，故不自行伪造播放器）。部分 UP 主可关闭「允许嵌入」；大会员 / 高画质内容需在官方播放器中由用户自行登录，本应用不解析播放地址、不接触视频流。
 - **接口稳定性**：上游可能调整字段或加风控；Web 链路的适配点是 `server/src/normalize.js`，原生直连链路是 `app/lib/data/bili_direct.dart`，两处规则同构，改动需同步；所有接口都有真实快照兜底。
 - **登录依赖授权服务端**：官方 OAuth 的 `client_secret` 不能放进客户端（APK / exe / Web 产物都可被反编译），所以原生端登录也必须连到一个持有密钥的 BFF。默认指向 `10.0.2.2:8787` / `127.0.0.1:8787`，真机请用 `--dart-define=BFF_URL=https://你的授权域名` 指向已部署实例；不登录不影响浏览内容。
-- **登录态不是硬件加密**：`SharedPreferences` 在当前六端零原生插件的约束下是最简方案；Windows 无原生实现会退化为会话内存态。生产发布建议接 Keychain / Keystore。
+- **登录态不是硬件加密**：`SharedPreferences` 在当前依赖约束下是最简方案；生产发布建议接 Keychain / Keystore。跨端持久化依赖 `shared_preferences ≥ 2.1.0`（六端原生实现齐全），版本被降到 2.0.x 时桌面端会退化为会话内存态 —— 工程已锁定 `^2.1.0` 并在设置页显示实际探测结果。
 - **解除授权推送未接入**：官方会在用户主动解除授权或注销时向厂商推送消息，本项目没有消息接收端点，因此本地可能残留已失效 token；调用开放接口返回失效时请重新授权，或点「退出登录」清除。
 - **scope 由开放平台审核决定**：授权页只展示已审核通过的权限点；新增 scope 后已授权用户必须重新授权，代码里通过 `BILI_OAUTH_SCOPES` 配置，不会自行扩张权限。
 - **工具链**：本工程在 Flutter 3.0 / Dart 2.17 上验证通过，依赖刻意压到 4 个，较新 SDK 同样可用。

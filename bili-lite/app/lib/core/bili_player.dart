@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 /// B 站官方「站外（外链）播放器」。
 ///
 /// 官方文档：https://player.bilibili.com
@@ -34,11 +32,9 @@ class BiliPlayer {
     return Uri.https(host, '/player.html', params).toString();
   }
 
-  /// 当前平台能否在应用内嵌入。
-  /// Web 可用 HtmlElementView 承载官方 iframe；原生六端在 Flutter 3.0 下
-  /// 没有统一的 WebView 插件，因此降级为用系统浏览器打开同一个官方播放器。
-  static bool get canEmbed => kIsWeb;
-
+  /// 平台能力判断已移至 `features/player/player_view.dart` 的
+  /// `kCanEmbedOfficialPlayer`：能力标记与承载实现放在同一个平台文件，
+  /// 避免「这里说能内嵌、那边却返回 null」的双真相。
   /// 官方视频页：评论 / 投币 / 点赞等需要账号的互动在此完成。
   static String officialPage(String bvid) =>
       'https://www.bilibili.com/video/$bvid';

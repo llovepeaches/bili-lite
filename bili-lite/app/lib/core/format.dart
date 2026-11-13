@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'tokens.dart';
+
 /// 数字 / 时间 / 时长的展示格式化。UI 层的细节都收敛在这里。
 class Fmt {
   Fmt._();
@@ -66,17 +68,26 @@ class Fmt {
     }
   }
 
-  static Color sourceColor(String source, bool dark) {
+  /// 数据来源对应的状态色。
+  ///
+  /// 重构前这里写死了 0xFF34B27B / 0xFFE9A23B / 0xFF8B8F98 三个色值，
+  /// 而 shell_page / settings_page / account_card 又各自抄了一份同样的
+  /// 字面量。现在统一走 `AppStatus`，改色只改一处。
+  ///
+  /// 原签名里的 `dark` 参数从来没被用到——深浅色下这组状态色本来就该一致，
+  /// 否则「实时」标签在深色模式下会变成另一种颜色，语义就乱了。该参数已移除。
+  static Color sourceColor(String source) {
     switch (source) {
       case 'bili':
       case 'live':
-        return const Color(0xFF34B27B);
+        return AppStatus.success;
       case 'cache':
-        return const Color(0xFFE9A23B);
+        return AppStatus.warning;
       case 'mock':
-        return const Color(0xFF8B8F98);
+      case 'static':
+        return AppStatus.neutral;
       default:
-        return const Color(0xFF8B8F98);
+        return AppStatus.neutral;
     }
   }
 }
