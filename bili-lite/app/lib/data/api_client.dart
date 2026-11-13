@@ -199,6 +199,16 @@ class ApiClient {
         return _search(s, q['keyword'] ?? '');
       case ApiPaths.video:
         return _detail(s, q['bvid'] ?? '', q['aid'] ?? '');
+      case ApiPaths.playurl:
+        // 离线快照里没有播放地址：如实返回空，播放器会给出「离线不可播放」提示。
+        return <String, dynamic>{
+          'url': '',
+          'quality': 0,
+          'qualityLabel': '离线快照无播放地址',
+          'list': <dynamic>[],
+        };
+      case ApiPaths.danmaku:
+        return <String, dynamic>{'count': 0, 'list': <dynamic>[]};
       default:
         return <String, dynamic>{};
     }

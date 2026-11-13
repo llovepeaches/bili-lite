@@ -19,6 +19,9 @@ const UA =
 const REFERER = 'https://www.bilibili.com/';
 const TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT || 10000);
 
+/** 视频流是长连接，超时要单独放宽，否则拖动进度条会被中途掐断。 */
+const STREAM_TIMEOUT_MS = Number(process.env.STREAM_TIMEOUT || 120000);
+
 // 实测可用的兜底身份，仅当 spi 接口不可达时使用。
 const FALLBACK_COOKIE =
   'buvid3=CB62BB7E-D5EA-B569-B6C2-60BFEF7FB92D13930infoc; ' +
@@ -91,6 +94,27 @@ async function biliGet(path, params = {}) {
   return json.data ?? json;
 }
 
+/**
+ * 请求上游的**二进制**接口（弹幕）。
+ *
+ * 弹幕接口返回的是 deflate(raw) 压缩的 XML，不是 JSON，所以不能走
+ * `biliGet`。这里单独提供一个二进制通道，沿用同样的 UA / Referer / 访客身份。
+ */
+async function biliGetBinary(path, params = {}) {
+  const url = new URL(path, BILI_API);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
+  }
+  const res = await fetch(url, {
+    headers: baseHeaders(),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    throw new UpstreamError(`上游返回 HTTP ${res.status}`, 502);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 class UpstreamError extends Error {
   constructor(message, status) {
     super(message);
@@ -105,9 +129,30 @@ class UpstreamError extends Error {
  * @param {number} ttl 毫秒
  * @param {() => Promise<any>} producer
  * @param {any} fallback producer 失败且无缓存时的兜底数据
+ * @param {boolean} skipCache 强制绕过缓存重新取数（用户手动刷新时用）
  */
-async function cached(key, ttl, producer, fallback = null) {
+async function cached(key, ttl, producer, fallback = null, skipCache = false) {
   const hit = cache.get(key);
+
+  if (skipCache) {
+    // 手动刷新：忽略新鲜缓存重新取数，但请求失败时仍可退回陈旧缓存，
+    // 不让用户因为一次上游抖动就看到空列表。
+    try {
+      const value = await producer();
+      if (cache.size >= CACHE_MAX) {
+        const oldest = cache.keys().next().value;
+        cache.delete(oldest);
+      }
+      cache.set(key, { value, expireAt: Date.now() + ttl, stale: false });
+      return { value, expireAt: 0, stale: false, fromCache: false, refreshed: true };
+    } catch (err) {
+      if (hit) return { ...hit, stale: true, fromCache: true };
+      if (fallback !== null) {
+        return { value: fallback, expireAt: 0, stale: true, fromCache: true, fromMock: true };
+      }
+      throw err;
+    }
+  }
   if (hit && hit.expireAt > Date.now()) return { ...hit, stale: false, fromCache: true };
 
   try {
@@ -159,11 +204,88 @@ async function fetchImage(rawUrl) {
   };
 }
 
+/**
+ * 视频流反向代理。
+ *
+ * 为什么需要它：
+ *   1. B 站 CDN（*.bilivideo.com）有 referer 防盗链，浏览器直接 <video src>
+ *      会被 403；video_player 的 Web 实现也没法给 <video> 元素加请求头。
+ *   2. 跨域直连会被 CORS 拦掉。
+ *   3. 原生端直连时同一个地址在部分机型上也会 403，需要统一由服务端带
+ *      正确 UA / Referer 取流。
+ * 所以客户端统一播放 `/api/stream?bvid=&cid=`，由这里换到真实 mp4。
+ *
+ * 支持 Range 请求（拖动进度条必须有），并透传 206 / Content-Range。
+ */
+async function fetchStream(rawUrl, rangeHeader) {
+  const target = httpsImage(rawUrl);
+  const allow = /(^|\.)bilivideo\.com$/i;
+  let host;
+  try {
+    host = new URL(target).hostname;
+  } catch (_) {
+    throw new UpstreamError('非法视频地址', 400);
+  }
+  if (!allow.test(host)) {
+    throw new UpstreamError('视频域名不在白名单内', 400);
+  }
+
+  const headers = {
+    'User-Agent': UA,
+    Referer: REFERER,
+    Origin: 'https://www.bilibili.com',
+    Cookie: cookie,
+    Accept: '*/*',
+    'Accept-Language': 'zh-CN,zh;q=0.9',
+  };
+  if (rangeHeader) headers.Range = rangeHeader;
+
+  const res = await fetch(target, {
+    headers,
+    // 视频流是长连接，不能用普通接口那种 10 秒超时。
+    signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
+  });
+  if (!res.ok && res.status !== 206) {
+    throw new UpstreamError(`视频上游 HTTP ${res.status}`, 502);
+  }
+  return {
+    status: res.status,
+    headers: {
+      'Content-Type': res.headers.get('content-type') || 'video/mp4',
+      'Content-Length': res.headers.get('content-length') || '',
+      'Content-Range': res.headers.get('content-range') || '',
+      'Accept-Ranges': res.headers.get('accept-ranges') || 'bytes',
+    },
+    // 视频动辄上百 MB，必须流式转发，不能整段读进内存。
+    stream: res.body,
+  };
+}
+
+/** 取某视频的可播放直链（durl[0]），供 /api/stream 使用。 */
+async function resolvePlayStreamUrl(bvid, cid, qn) {
+  const data = await biliGet('/x/player/playurl', {
+    bvid,
+    cid,
+    qn,
+    fnval: 1,
+    fourk: 1,
+    platform: 'html5',
+    high_quality: 1,
+  });
+  const durl = Array.isArray(data?.durl) ? data.durl : [];
+  const url = durl[0]?.url || '';
+  if (!url) throw new UpstreamError('上游未返回可播放地址', 502);
+  return url;
+}
+
 module.exports = {
   biliGet,
+  biliGetBinary,
   cached,
   initIdentity,
   fetchImage,
+  fetchStream,
+  resolvePlayStreamUrl,
   httpsImage,
   UpstreamError,
   cache,

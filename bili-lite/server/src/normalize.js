@@ -269,6 +269,93 @@ function normalizeReply(data) {
   };
 }
 
+/**
+ * 播放地址归一化。
+ *
+ * B 站的 playurl 有两种形态：
+ *   * `durl` —— 单文件 mp4，兼容性最好，桌面与移动端都能直接播
+ *   * `dash` —— 音视频分离的 m4s，需要 MSE / ExoPlayer 才能合流
+ *
+ * 应用内播放统一取 `durl`：它是**渐进式单文件**，可以边下边播、不需要
+ * 合流逻辑，六端行为一致。DASH 分辨率更高但对播放端要求高得多，
+ * 这里只保留清晰度信息供 UI 展示。
+ */
+function normalizePlayurl(data) {
+  const durl = Array.isArray(data?.durl) ? data.durl : [];
+  const first = durl[0] || {};
+  return {
+    // 完整地址：客户端要能直接用，所以保留 query（里面有鉴权签名）
+    url: str(first.url),
+    size: num(first.size),
+    // 备用地址：主 CDN 抽风时可以让客户端换一个
+    backupUrl: str(first.backup_url || (Array.isArray(first.backup_url) ? first.backup_url[0] : '')),
+    quality: num(data?.quality),
+    acceptQuality: Array.isArray(data?.accept_quality) ? data.accept_quality.map(num) : [],
+    acceptDescription: Array.isArray(data?.accept_description) ? data.accept_description : [],
+    format: str(data?.format),
+    timelength: num(data?.timelength),
+    // 清晰度名称：quality → accept_description 的对应文案
+    qualityLabel: qualityLabel(data),
+  };
+}
+
+function qualityLabel(data) {
+  const q = num(data?.quality);
+  const list = Array.isArray(data?.accept_description) ? data.accept_description : [];
+  const names = {
+    120: '4K 超清',
+    116: '1080P 60帧',
+    112: '1080P 高码率',
+    80: '1080P',
+    74: '720P 60帧',
+    64: '720P',
+    32: '480P',
+    16: '360P 流畅',
+  };
+  if (names[q]) return names[q];
+  const hit = list.find((x) => num(x?.value) === q);
+  return str(hit?.value_desc || hit?.desc) || `${q}`;
+}
+
+/**
+ * 弹幕 XML → 结构化数组。
+ *
+ * B 站的 `x/v1/dm/list.so` 返回的是 **deflate(raw) 压缩的 XML**，不是
+ * protobuf，也不是未压缩的 JSON。先解压再解析 `<d p="...">` 节点。
+ *
+ * `p` 字段的格式是：`时间(秒),模式,字号,颜色,发送时间,随机种子,用户ID,行ID`
+ * 模式：1=滚动、4=底部、5=顶部。
+ */
+function parseDanmakuXml(xml) {
+  const out = [];
+  const re = /<d\s+p="([^"]*)"[^>]*>([\s\S]*?)<\/d>/g;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    const attrs = m[1].split(',');
+    const time = Number(attrs[0]);
+    if (!Number.isFinite(time)) continue;
+    out.push({
+      time: Math.round(time * 1000), // 毫秒，客户端直接按时间轴对齐
+      mode: Number(attrs[1]) || 1,
+      size: Number(attrs[2]) || 25,
+      color: Number(attrs[3]) || 0xffffff,
+      text: decodeXml(m[2]),
+    });
+  }
+  return out;
+}
+
+/** 解 XML 实体。 */
+function decodeXml(s) {
+  return String(s ?? '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&amp;/g, '&');
+}
+
 module.exports = {
   cleanText,
   toSeconds,
@@ -280,4 +367,6 @@ module.exports = {
   normalizeSearch,
   normalizeView,
   normalizeReply,
+  normalizePlayurl,
+  parseDanmakuXml,
 };

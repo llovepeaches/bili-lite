@@ -83,7 +83,7 @@ class HomeController extends ChangeNotifier {
 
   /// 加载指定频道。
   ///
-  /// [more] 是加载更多（追加），[force] 是强制刷新（重置游标）。
+  /// [more] 是加载更多（追加），[force] 是强制刷新（换一批）。
   Future<void> load(
     HomeChannel channel, {
     bool more = false,
@@ -98,12 +98,18 @@ class HomeController extends ChangeNotifier {
 
     try {
       if (channel == HomeChannel.recommended) {
-        if (more) {
+        // 关键：force（换一批）必须**递增** freshIdx，而不是重置为 1。
+        // B 站的 fresh_idx 就是「换一批」的游标，重置回 1 会拿到和上次
+        // 完全相同的一批稿件 —— 这正是之前「下拉刷新没反应」的原因。
+        // 配合服务端的 skip_cache=1 一起绕过 60 秒的本地缓存。
+        if (more || force) {
           _freshIdx += 1;
-        } else if (force) {
-          _freshIdx = 1;
         }
-        final res = await _repo.feed(ps: 20, freshIdx: _freshIdx);
+        final res = await _repo.feed(
+          ps: 20,
+          freshIdx: _freshIdx,
+          skipCache: force,
+        );
         _videos[HomeChannel.recommended] = more
             ? _merge(videosOf(HomeChannel.recommended), res.data)
             : res.data;
@@ -115,14 +121,18 @@ class HomeController extends ChangeNotifier {
         } else if (force) {
           _popularPage = 1;
         }
-        final res = await _repo.popular(pn: _popularPage, ps: 20);
+        final res = await _repo.popular(
+          pn: _popularPage,
+          ps: 20,
+          skipCache: force,
+        );
         _videos[HomeChannel.popular] = more
             ? _merge(videosOf(HomeChannel.popular), res.data)
             : res.data;
         _sources[HomeChannel.popular] = res.source;
         _errors[HomeChannel.popular] = null;
       } else {
-        final res = await _repo.rank(rid: _rid);
+        final res = await _repo.rank(rid: _rid, skipCache: force);
         _videos[HomeChannel.rank] = res.data.list;
         _rankNote = res.data.note;
         _sources[HomeChannel.rank] = res.source;

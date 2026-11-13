@@ -415,3 +415,89 @@ class ApiResponse<T> {
 
   bool get isOffline => source == 'mock' || stale;
 }
+
+/// 播放地址。
+///
+/// 取 B 站 playurl 的 `durl`（单文件 mp4）：渐进式播放、不需要合流器，
+/// 六端行为一致。DASH 是音视频分离的 m4s，需要各端自建合流逻辑，不适合。
+class PlayUrl {
+  final String url;
+  final String backupUrl;
+  final int size;
+  final int quality;
+  final String qualityLabel;
+  final int timelength;
+
+  const PlayUrl({
+    this.url = '',
+    this.backupUrl = '',
+    this.size = 0,
+    this.quality = 0,
+    this.qualityLabel = '',
+    this.timelength = 0,
+  });
+
+  bool get playable => url.isNotEmpty;
+
+  /// 视频时长（毫秒）。
+  int get durationMs => timelength;
+
+  factory PlayUrl.fromJson(dynamic raw) {
+    final j = _m(raw);
+    return PlayUrl(
+      url: _s(j['url']),
+      backupUrl: _s(j['backupUrl']),
+      size: _i(j['size']),
+      quality: _i(j['quality']),
+      qualityLabel: _s(j['qualityLabel']),
+      timelength: _i(j['timelength']),
+    );
+  }
+}
+
+/// 一条弹幕。
+///
+/// [mode] 沿用 B 站的定义：1 = 滚动、4 = 底部固定、5 = 顶部固定。
+/// [time] 是毫秒时间戳，播放器按播放进度取用。
+class Danmaku {
+  final int time;
+  final int mode;
+  final int size;
+  final int color;
+  final String text;
+
+  const Danmaku({
+    this.time = 0,
+    this.mode = 1,
+    this.size = 25,
+    this.color = 0xffffff,
+    this.text = '',
+  });
+
+  factory Danmaku.fromJson(dynamic raw) {
+    final j = _m(raw);
+    return Danmaku(
+      time: _i(j['time']),
+      mode: _i(j['mode']),
+      size: _i(j['size']),
+      color: _i(j['color']),
+      text: _s(j['text']),
+    );
+  }
+}
+
+/// 弹幕列表。
+class DanmakuList {
+  final int count;
+  final List<Danmaku> list;
+
+  const DanmakuList({this.count = 0, this.list = const <Danmaku>[]});
+
+  bool get isEmpty => list.isEmpty;
+
+  factory DanmakuList.fromJson(dynamic raw) {
+    final j = _m(raw);
+    final items = _l(j['list']).map((e) => Danmaku.fromJson(e)).toList();
+    return DanmakuList(count: _i(j['count']), list: items);
+  }
+}
