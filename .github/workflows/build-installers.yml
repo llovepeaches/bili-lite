@@ -614,7 +614,11 @@ jobs:
         if: env.SKIP_IOS != 'true'
         with:
           name: ios-unsigned-ipa
-          path: ipa/*.ipa
+          # 两个目录都要传：未签名在 ipa/，ad-hoc 签名在 ipa-adhoc/。
+          # 只写 ipa/*.ipa 会让 ad-hoc 产物既不上传 artifact 也不进 SHA256SUMS。
+          path: |
+            ipa/*.ipa
+            ipa-adhoc/*.ipa
           if-no-files-found: warn
           retention-days: 30
 

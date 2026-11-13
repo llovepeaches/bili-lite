@@ -22,12 +22,12 @@ iOS 不允许。所以"CI 打了个 IPA"和"CI 打了个能用的 IPA"之间，�
 
 ## 二、三条路径怎么选
 
-| | 路径 A：CI + TestFlight | 路径 B：本机 macOS 出 IPA | 路径 C：CI 出未签名 IPA |
+| | 路径 A：CI + TestFlight | 路径 B：本机 macOS 出 IPA | 路径 C：CI 出 ad-hoc 签名 IPA |
 | --- | --- | --- | --- |
 | 额外花钱 | $99/年 | $99/年 | $0 |
 | 需要 Mac | ❌ | ✅ | ❌ |
-| 产出 | 用户可装的 IPA（TestFlight） | 用户可装的 IPA（Ad Hoc/开发） | 装不了的 IPA，仅供编译验证 |
-| 适合 | 长期维护、多人安装 | 一次性的自用/小范围测试 | 只验证代码能不能编过 |
+| 产出 | 用户可装的 IPA（TestFlight） | 用户可装的 IPA（Ad Hoc/开发） | 可侧载重签的 IPA（7 天有效）+ 纯未签名 IPA |
+| 适合 | 长期维护、多人安装 | 一次性的自用/小范围测试 | 验证编译链路、自用侧载 |
 | 自动化程度 | 全自动（推送即出包） | 半自动 | 全自动 |
 
 **推荐路径 A。** 它和前一轮"构建统一交给 GitHub"的思路是一致的：编译、签名、上传全在流水线里完成，
@@ -139,16 +139,52 @@ xcrun devicectl device install app --device <UDID> BiliLite-1.2.0-signed.ipa
 
 ---
 
-## 五、路径 C：只要未签名 IPA
+## 五、路径 C：CI 出 IPA（$0，编译验证 + 侧载素材）
 
-不需要任何证书、不需要开发者账号，只想验证"iOS 端能不能编过"：
+不需要任何证书、不需要开发者账号：
 
 ```bash
-gh workflow run build-installers.yml -f run_ios=true -f publish=false
+gh workflow run build-installers.yml -f run_ios=true -f publish=true
 ```
 
-产物 `BiliLite-<版本>-UNSIGNED.ipa` 会作为 Actions artifact 留存 30 天。
-它**不能装进任何真机**，只能用来验证编译链路、跑静态检查。
+产出**两个** IPA：
+
+| 产物 | 状态 | 用途 |
+| --- | --- | --- |
+| `BiliLite-<版本>-UNSIGNED.ipa` | 完全无签名 | 验证编译链路、CI 冒烟 |
+| `BiliLite-<版本>-iOS-ADHOC.ipa` | **ad-hoc 自签名**（`codesign -s -`） | 侧载素材：AltStore / Sideloadly / 爱思 可直接重签安装 |
+
+> ad-hoc 签名用本机自带的自签名身份完成，**不需要任何 Apple 凭证**，
+> 但它**不是** Apple 认可的签名 —— 装到真机上仍需由侧载工具用自己的证书重签，
+> 且免费 Apple ID 重签的有效期只有 **7 天**。
+
+### ad-hoc 签名的顺序（踩过坑）
+
+签名顺序错了会被拒绝（引用了未签名代码）：
+
+```
+dylib  →  framework  →  PlugIns 里的 .app/.framework  →  Runner.app 本身
+```
+
+CI 里对应这段：
+
+```bash
+find "$APP/Frameworks" -type f -name "*.dylib" -print0 \
+  | xargs -0 -I{} codesign --force --sign - --timestamp=none "{}"
+for fw in "$APP"/Frameworks/*.framework; do
+  codesign --force --sign - --timestamp=none "$fw"
+done
+codesign --force --sign - --timestamp=none "$APP"
+```
+
+验证结果（run `43349748942`）：
+
+```
+Identifier=com.bililite.bililite
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20400 size=974 flags=0x2(adhoc) hashes=24+3 location=embedded
+Signature=adhoc
+```
 
 ---
 
@@ -164,7 +200,7 @@ gh workflow run build-installers.yml -f run_ios=true -f publish=false
 | Runner | `macos-15`，Xcode **16.4**，iOS 18.5 SDK |
 | Flutter | **3.0.0**（未升级） |
 | 编译 | `flutter build ios --release --no-codesign` ✅ 110.4s |
-| 产物 | `Runner.app` → `BiliLite-1.2.0-UNSIGNED.ipa`，7.29 MB |
+| 产物 | `Runner.app` → `BiliLite-1.2.0-UNSIGNED.ipa` 7.29 MB + `BiliLite-1.2.0-iOS-ADHOC.ipa` 7.31 MB（ad-hoc 签名） |
 | 可执行文件 | `Mach-O 64-bit arm64 executable`（真机架构） |
 | `CFBundleIdentifier` | `com.bililite.bililite` |
 | `CFBundleShortVersionString` / `CFBundleVersion` | `1.2.0` / `15`（= GitHub run number） |
