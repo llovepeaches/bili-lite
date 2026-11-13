@@ -6,7 +6,9 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:7.1.2'
+        // AGP 7.2.2 是首个官方支持 compileSdk 33 的版本（7.1.x 配 33 会告警）。
+        // 要求 Gradle >= 7.3.3，本仓库 wrapper 为 7.4，满足。
+        classpath 'com.android.tools.build:gradle:7.2.2'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
