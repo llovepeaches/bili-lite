@@ -24,9 +24,9 @@ on:
         required: false
         default: "true"
       run_ios:
-        description: "Attempt iOS job (needs Flutter >= 3.24.4 for Xcode 16 compatibility)"
+        description: "Build iOS IPA on the macOS runner. 默认开启；填 false 可跳过（省约 4 分钟）"
         required: false
-        default: "false"
+        default: "true"
       xcode_version:
         description: "Xcode version on the macOS runner (empty = image default). macos-15 ships 16.0~16.4 and 26.x"
         required: false
@@ -503,7 +503,10 @@ jobs:
     timeout-minutes: 60
     continue-on-error: true
     env:
-      RUN_IOS: ${{ inputs.run_ios || 'false' }}
+      # push(tag) 事件下 inputs 为空，这里 fallback 到 true。
+      # 否则每次打 tag 触发的构建都会跳过 iOS，而 checksums 依赖 ios job，
+      # 结果就是新一轮的 SHA256SUMS 会把 IPA 悄悄抹掉，与 Release 上的实际资产脱节。
+      RUN_IOS: ${{ inputs.run_ios || 'true' }}
       PUBLISH: ${{ inputs.publish || 'true' }}
     steps:
       - uses: actions/checkout@v4
