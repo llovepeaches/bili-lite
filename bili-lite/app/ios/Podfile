@@ -63,3 +63,16 @@ post_install do |installer|
     ::File.write(path, text.gsub('DT_TOOLCHAIN_DIR', 'TOOLCHAIN_DIR')) if text.include?('DT_TOOLCHAIN_DIR')
   end
 end
+
+# CocoaPods 1.16.2+ 的 target_validator 在校验「静态库传递依赖」时，
+# 会递归展开 dependent_targets，遇到空集合就抛
+#   NoMethodError - undefined method `each' for nil
+#   .../cocoapods/installer/xcode/target_validator.rb:88
+# （见 https://github.com/CocoaPods/CocoaPods/issues/3289）。
+# 本工程用 use_frameworks! + Flutter 自带的静态 Framework，正好命中这条路径。
+# Flutter 官方模板同样使用 use_frameworks!，因此跳过这项校验是安全的。
+pre_install do |installer|
+  Pod::Installer::Xcode::TargetValidator.send(
+    :define_method, :verify_no_static_framework_transitive_dependencies
+  ) {}
+end
