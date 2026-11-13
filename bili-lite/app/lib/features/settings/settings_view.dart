@@ -220,7 +220,7 @@ class _SettingsPageState extends State<SettingsPage> {
           '收藏、历史、稍后再看与搜索历史全部保存在本机，不上传任何服务器，'
           '浏览内容无需登录；B 站账号登录仅用于官方 OAuth 授权与展示用户公开资料。'),
         const SizedBox(height: 10),
-        const SettingsRow('App 版本', '1.3.0'),
+        const SettingsRow('App 版本', '1.4.0'),
         const SettingsRow('支持平台', 'Android / iOS / Web / Windows / macOS / Linux'),
         const SizedBox(height: 12),
         GlassPanel(

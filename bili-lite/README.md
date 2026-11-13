@@ -116,7 +116,7 @@ Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入
 iOS 需要加 `-f run_ios=true` 才会构建（macOS runner）：
 
 ```bash
-gh workflow run build-installers.yml -f release_tag=bili-lite-v1.3.0 -f publish=true -f run_ios=true
+gh workflow run build-installers.yml -f release_tag=bili-lite-v1.4.0 -f publish=true -f run_ios=true
 ```
 
 产出 `UNSIGNED.ipa`（编译验证）与 `iOS-ADHOC.ipa`（ad-hoc 自签名，侧载工具可重签）。
