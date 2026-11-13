@@ -34,7 +34,11 @@ apply plugin: 'kotlin-android'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
-    compileSdkVersion flutter.compileSdkVersion
+    // compileSdk 必须 ≥ 33：video_player_android 2.4.x 内置 ExoPlayer 2.18.5，
+    // url_launcher_android 6.0.26 同理，二者都会在 AAR metadata 检查时
+    // 断言 compileSdkVersion >= 33（Flutter 3.0 默认给的 31 会直接构建失败）。
+    // 只抬 compileSdk，不动 targetSdk / minSdk，避免引入 Android 13 运行时行为变化。
+    compileSdkVersion 33
     ndkVersion flutter.ndkVersion
 
     compileOptions {

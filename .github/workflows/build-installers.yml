@@ -210,11 +210,12 @@ jobs:
           fi
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "sdkmanager: $(command -v sdkmanager || echo 'not found')"
-          # compileSdk/targetSdk 由 Flutter 3.0 决定（31），build-tools 30.0.3 是 AGP 4.2.2 的默认版本。
+          # compileSdk 提到 33（video_player 内置 ExoPlayer 2.18.5 与
+          # url_launcher_android 6.0.26 都要求 ≥33），build-tools 用 33.0.2。
           # 装不上也不直接失败：AGP 仍可自行解析已预装的 platform。
           if command -v sdkmanager >/dev/null 2>&1; then
             yes | sdkmanager --licenses >/dev/null 2>&1 || true
-            sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3" || \
+            sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2" || \
               echo "::warning::部分 SDK 包安装失败，继续使用 runner 预装版本"
           fi
           echo "--- platforms ---"; ls "$ANDROID_HOME/platforms" 2>/dev/null || true
