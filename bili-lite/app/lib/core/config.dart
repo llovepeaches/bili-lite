@@ -1,17 +1,26 @@
 import 'package:flutter/foundation.dart';
 
 import 'api_paths.dart';
+import 'server_config.dart';
 
 /// 服务端地址的多端适配。
 ///
-/// Web 由 BFF 同源托管，直接使用相对路径 `/api/...`，无需跨域配置；
-/// 桌面 / iOS 模拟器走 127.0.0.1，Android 模拟器走 10.0.2.2；
-/// 真机调试用 `--dart-define=BFF_URL=http://<电脑IP>:8787` 覆盖。
+/// Web 由 BFF 同源托管，直接使用相对路径 `/api/...`；
+/// 桌面 / iOS 模拟器走 127.0.0.1，Android 模拟器走 10.0.2.2。
+/// **注意 10.0.2.2 只在模拟器里有效**，真机请用 App 内「授权服务」设置
+/// 填入电脑的局域网 IP 或已部署的 https 域名（见 [ServerConfig]）。
+///
+/// 编译期仍可用 `--dart-define=BFF_URL=...` 覆盖；运行时设置的优先级更高。
 class ApiConfig {
   ApiConfig._();
 
-  static const String _override =
+  static const String _compileTimeOverride =
       String.fromEnvironment('BFF_URL', defaultValue: '');
+
+  /// 编译期默认值 + 运行时用户配置，后者优先。
+  static String get configuredBase => ServerConfig.instance.hasCustom
+      ? ServerConfig.instance.value
+      : _compileTimeOverride;
 
   static const int defaultPort = 8787;
 
@@ -29,10 +38,10 @@ class ApiConfig {
 
   /// 原生端直连 B 站公开接口，默认开启。
   /// Web 端受浏览器 CORS 限制必须走同源 BFF；显式指定 BFF_URL 时以调试配置为准。
-  static bool get direct => !offline && !kIsWeb && _override.isEmpty;
+  static bool get direct => !offline && !kIsWeb && configuredBase.isEmpty;
 
   static String get baseUrl {
-    if (_override.isNotEmpty) return _override;
+    if (configuredBase.isNotEmpty) return configuredBase;
     if (kIsWeb) return '';
     if (defaultTargetPlatform == TargetPlatform.android) {
       return 'http://10.0.2.2:$defaultPort';
@@ -71,13 +80,13 @@ class ApiConfig {
   /// 官方 OAuth 必须经过授权服务端：client_secret 只能留在服务端，客户端拿不到也不该拿到。
   /// 因此这里不走「原生直连 B 站」的链路，始终指向 BFF（或显式配置的 BFF_URL）。
   static String oauthUrl(String path) {
-    final base = _override.isNotEmpty ? _override : (kIsWeb ? '' : baseUrl);
+    final base = configuredBase.isNotEmpty ? configuredBase : (kIsWeb ? '' : baseUrl);
     return '$base$path';
   }
 
   /// OAuth 服务地址（给用户看的说明）
   static String get oauthDisplayBase {
-    if (_override.isNotEmpty) return _override;
+    if (configuredBase.isNotEmpty) return configuredBase;
     return kIsWeb ? '当前同源服务' : baseUrl;
   }
 
@@ -107,6 +116,6 @@ class ApiConfig {
   static String get displayBase {
     if (offline) return '内置离线快照';
     if (direct) return 'api.bilibili.com（直连）';
-    return kIsWeb && _override.isEmpty ? '当前同源服务' : baseUrl;
+    return kIsWeb && configuredBase.isEmpty ? '当前同源服务' : baseUrl;
   }
 }

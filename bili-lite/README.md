@@ -1,7 +1,7 @@
 # Bili Lite · 简洁的哔哩哔哩第三方多端客户端
 
 一套代码覆盖 **Android / iOS / Web / Windows / macOS / Linux**，基于哔哩哔哩公开 Web 数据，
-只保留「看内容」这件事：推荐、热门、排行榜、搜索、视频详情与评论、**应用内播放 + 弹幕**，以及纯本地的收藏 / 历史 / 稍后再看与官方 OAuth 登录。
+只保留「看内容」这件事：推荐、热门、排行榜、搜索、视频详情与评论、**应用内播放 + 弹幕**，以及纯本地的收藏 / 历史 / 稍后再看，加上 **B 站 App 扫码登录**（另有官方 OAuth 2.0 备用通道）。
 
 > 非官方项目，仅供学习与个人使用，与哔哩哔哩官方无任何关联。
 
@@ -46,7 +46,28 @@ Web 之所以仍要 BFF：B 站没有给第三方开放 CORS，且无访客 Cook
 原生端没有这两个限制，因此 `bili_direct.dart` 用 spi 动态换取 `buvid3/buvid4`（失败则有兜底身份），
 再按与 `server/src/normalize.js` 同构的规则归一。设置页会如实显示「已连接 B 站 / 已降级」与当前访客身份。
 
-**官方登录是第四条独立链路**，与浏览数据完全解耦——不登录也能看全部内容：
+**登录是第四条独立链路**，与浏览数据完全解耦——不登录也能看全部内容。
+
+主通道是 **B 站 App 扫码登录**：客户端直连 B 站 Web 登录接口，不需要开放平台凭证，
+也不需要用户自己部署任何服务，独立安装包开箱即用。它拿的是 B 站 Web 登录
+Cookie（SESSDATA / bili_jct / DedeUserID 等），仅保存在本机、只发往 bilibili.com。
+
+```
+原生端（Android / iOS / 桌面）            B 站
+   │ ① GET passport.bilibili.com/.../qrcode/generate      │
+   ├────────────────────────────────────────────────────►│ → url + qrcode_key
+   │ ② QrImage 渲染 url，手机 B 站 App 扫码并确认           │
+   │ ③ 每 2s GET .../qrcode/poll?qrcode_key=               │
+   ├────────────────────────────────────────────────────►│ → 86101 未扫 / 86090 待确认 / 0 成功
+   │ ④ 成功时从 Set-Cookie 与回调 URL 取登录 Cookie         │
+   │ ⑤ GET api.bilibili.com/x/web-interface/nav（带 Cookie）│ → 昵称 / 头像 / mid
+   │ ⑥ Cookie 存入本机 SharedPreferences                   │
+```
+
+Web 端受同源策略限制，由 BFF 的 `/api/qr/*` 做纯转发代理（不落盘、不缓存、不打印 Cookie）；
+原生端完全不经过 BFF。
+
+**备用通道**是官方 OAuth 2.0，只服务已有自建授权服务的场景（`client_secret` 只能留在服务端）：
 
 ```
 Flutter App                         BFF（唯一持有 client_secret）        B 站开放平台
@@ -64,7 +85,7 @@ Flutter App                         BFF（唯一持有 client_secret）        B
 ```
 
 `client_secret` 只在 BFF 进程的环境变量里，不写入客户端、安装包、日志、Git 或响应；
-授权码 `code` 也不落客户端。详见 [「B 站账号：官方 OAuth 2.0」](#b-站账号官方-oauth-20)。
+授权码 `code` 也不落客户端。详见 [「B 站账号」](#b-站账号登录)。
 
 ---
 
@@ -88,13 +109,17 @@ flutter build web
 
 只想看 UI、不联网也可以：`MOCK_MODE=1 node src/index.js`，全部走内置的真实数据快照。
 
-想体验官方登录链路但没有开放平台凭证时，用 `BILI_OAUTH_SANDBOX=1 node src/index.js` 启动，
-设置页「B 站账号」会出现醒目的「演示授权 · 非 B 站官方」标签，可完整走一遍登录 / 续期 / 退出登录。
-真实凭证的配置方式见 [「启用真实登录」](#启用真实登录)。
+**登录不需要上面这个服务**：Android APK / Windows exe / iOS 直接点账号面板的「扫码登录」，
+用手机 B 站 App 扫一下即可，无需开放平台凭证、无需自建后端。
+只有想体验 **官方 OAuth 备用通道** 而没有开放平台凭证时，才用 `BILI_OAUTH_SANDBOX=1 node src/index.js` 启动，
+展开账号面板的「官方 OAuth 与授权服务（高级 / 可选）」，会出现醒目的「演示授权 · 非 B 站官方」标签，
+可完整走一遍授权 / 续期 / 退出登录。真实凭证的配置方式见 [「B 站账号登录」](#b-站账号登录)。
 
-**独立安装包不需要上面这个服务**：Android APK / Windows exe 会自行直连 B 站公开接口拿实时数据，
-只有连不上时才降级到内置的 `assets/offline.json`。真机调试若想改回走本机 BFF，
-用 `flutter run --dart-define=BFF_URL=http://<电脑IP>:8787`；完全禁用联网则加 `--dart-define=OFFLINE=1`。
+**独立安装包也不需要 BFF 拿数据**：Android APK / Windows exe 会自行直连 B 站公开接口拿实时数据，
+只有连不上时才降级到内置的 `assets/offline.json`。真机调试若想改回走本机 BFF，可以在账号面板
+「授权服务」里直接填 `http://<电脑IP>:8787`（**运行时生效，无需重新打包**），或编译时用
+`flutter run --dart-define=BFF_URL=http://<电脑IP>:8787`；完全禁用联网则加 `--dart-define=OFFLINE=1`。
+注意 `10.0.2.2` 只在 Android 模拟器里指向宿主机，真机必须填局域网 IP 或 https 域名。
 
 ### 直接下载已构建好的安装包
 
@@ -103,18 +128,18 @@ flutter build web
 
 | 平台 | Release 资产 |
 | --- | --- |
-| Android | `BiliLite-1.5.0-Android.apk` |
-| Windows | `BiliLite-1.5.0-Windows-Setup.exe` |
-| Web + BFF | `bili-lite-web-v1.5.0.tar.gz` / `.zip` |
-| iOS | `BiliLite-1.5.0-UNSIGNED.ipa`（编译验证）、`BiliLite-1.5.0-iOS-ADHOC.ipa`（ad-hoc 签名） |
-| 源码 | `bili-lite-v1.5.0-src.tar.gz` / `.zip` |
+| Android | `BiliLite-1.6.0-Android.apk` |
+| Windows | `BiliLite-1.6.0-Windows-Setup.exe` |
+| Web + BFF | `bili-lite-web-v1.6.0.tar.gz` / `.zip` |
+| iOS | `BiliLite-1.6.0-UNSIGNED.ipa`（编译验证）、`BiliLite-1.6.0-iOS-ADHOC.ipa`（ad-hoc 签名） |
+| 源码 | `bili-lite-v1.6.0-src.tar.gz` / `.zip` |
 
-最新发行版：[bili-lite-v1.5.0](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v1.5.0)
+最新发行版：[bili-lite-v1.6.0](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v1.6.0)
 
 手动触发一次全平台构建：
 
 ```bash
-gh workflow run build-installers.yml -f release_tag=bili-lite-v1.5.0 -f publish=true -f run_ios=true
+gh workflow run build-installers.yml -f release_tag=bili-lite-v1.6.0 -f publish=true -f run_ios=true
 ```
 
 Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入库），可覆盖升级。
@@ -122,7 +147,7 @@ Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入
 iOS 需要加 `-f run_ios=true` 才会构建（macOS runner）：
 
 ```bash
-gh workflow run build-installers.yml -f release_tag=bili-lite-v1.5.0 -f publish=true -f run_ios=true
+gh workflow run build-installers.yml -f release_tag=bili-lite-v1.6.0 -f publish=true -f run_ios=true
 ```
 
 产出 `UNSIGNED.ipa`（编译验证）与 `iOS-ADHOC.ipa`（ad-hoc 自签名，侧载工具可重签）。
@@ -142,12 +167,13 @@ API Key（四个 Secret，见 [iOS 打包指南](docs/iOS打包指南.md)），�
 | 视频卡片 | **沉浸式**（弹幕数叠在封面左下角，UP 主带头像）/ **紧凑型**两种样式可切换 |
 | 我的 | 收藏、观看历史、稍后再看；长按卡片删除、一键清空；全部本地存储，无需登录 |
 | 导航 | 底部悬浮玻璃 dock（**滚动时自动收起**）/ 宽屏侧边栏；**入口可增删与排序**；返回键先回首页再退出 |
-| 设置 | 浅色 / 深色 / 跟随系统、**液态玻璃开关 / 浓度 / 通透·着色材质 / 动态光晕**、**卡片样式 / 导航入口编辑器 / 滚动收起底栏**、服务状态与健康检查、缓存条目、清空本地数据、**B 站账号（官方 OAuth 2.0 登录 / 续期 / 退出）**、数据边界与合规说明 |
+| 详情 | **应用内播放 + 弹幕**：详情页点封面进播放页，画面直接解码 B 站公开直链，弹幕作为叠加层渲染（开关 / 不透明度 / 字号 / 滚动·顶部·底部轨道）；另有「在官方站点打开」降级入口 |
+| 设置 | 浅色 / 深色 / 跟随系统、**液态玻璃开关 / 浓度 / 通透·着色材质 / 动态光晕**、**卡片样式 / 导航入口编辑器 / 滚动收起底栏**、服务状态与健康检查、缓存条目、清空本地数据、**B 站账号（扫码登录 / 退出，高级区含官方 OAuth 2.0 备用通道与授权服务地址）**、数据边界与合规说明 |
 
-**设计取舍**：播放交由 B 站官方外链播放器、不加载广告、不做个性化追踪。
-B 站账号登录走开放平台官方 OAuth 2.0 授权码流程，用户授权后把 token 持久化到本机，
-但只用已授权的只读 scope（`USER_INFO`）；不抓取 Web 登录态、不代用户执行写操作。
-点击封面在应用内打开官方播放器；评论 / 投币等观看侧互动在官方客户端完成（开放平台没有对应 scope）。
+**设计取舍**：应用内自建播放器、不加载广告、不做个性化追踪；播放只取 B 站公开的 `playurl` 直链与公开弹幕，不注入登录凭证。
+B 站账号登录**主通道是官方 Web 扫码登录**（B 站 App 扫码确认，本机保存 Web 登录 Cookie），
+**备用通道**才是开放平台官方 OAuth 2.0 授权码流程，且只使用已授权的只读 scope（`USER_INFO`）。
+两路都只用于展示昵称 / 头像，不代用户执行任何写操作；评论 / 投币等观看侧互动仍在官方客户端完成。
 数据状态在 UI 上以「B 站实时 / 实时 / 缓存 / 离线」标签透明展示，设置页可见当前连接方式与访客身份。
 
 页面效果截图见 [`docs/preview/`](docs/preview/)；六个平台的构建命令见 [`docs/多端构建.md`](docs/多端构建.md)。
@@ -200,7 +226,19 @@ B 站账号登录走开放平台官方 OAuth 2.0 授权码流程，用户授权�
 
 缓存 TTL：推荐 60s、排行榜 5min、热门 3min、搜索 2min、详情 10min、评论 60s。
 
-**官方 OAuth 端点**（`/api/oauth/*`，由 `server/src/oauth.js` 独立分发，全部 `Cache-Control: no-store`）：
+**扫码登录代理端点**（`/api/qr/*`，仅 Web 端使用，由 `server/src/qr_proxy.js` 纯转发，全部 `Cache-Control: no-store`）：
+
+| 端点 | 方法 | 作用 |
+| --- | --- | --- |
+| `/api/qr/generate` | GET | 转发 `passport.bilibili.com/x/passport-login/web/qrcode/generate`，返回 `{ url, qrcodeKey }` |
+| `/api/qr/poll` | GET | `?key=` 转发 `qrcode/poll`，把业务码 `86101 / 86090 / 86038 · 86039 / 0` 归并为 `waiting / scanned / expired / success`；成功时从 `Set-Cookie` 与回调 URL 提取登录 Cookie |
+| `/api/qr/nav` | POST | 带 Cookie 转发 `api.bilibili.com/x/web-interface/nav`，返回 `{ mid, name, face, vipLabel }` |
+
+代理不缓存、不落盘、不打印 Cookie；`SESSDATA` 里的 `%2C` / `%2A` 等百分号编码原样保留，
+避免被 `URLSearchParams` / `Uri.queryParameters` 自动解码破坏。
+原生端（Android / iOS / 桌面）**完全不经过这些端点**，由 `app/lib/data/qr_login_api.dart` 直连 B 站。
+
+**官方 OAuth 端点（备用通道）**（`/api/oauth/*`，由 `server/src/oauth.js` 独立分发，全部 `Cache-Control: no-store`）：
 
 | 端点 | 方法 | 作用 |
 | --- | --- | --- |
@@ -225,30 +263,32 @@ bili-lite/
 ├── README.md
 ├── docs/
 │   ├── 多端构建.md          # 六个平台各自的构建与真机调试命令
-│   ├── 重构说明.md          # 一次全量重构的逐条问题清单与改进方案
-│   └── preview/             # 20 张页面效果截图（含 6 张 OAuth 链路）
+│   ├── 重构说明.md          # 四轮重构 / 改造的逐条问题清单与改进方案
+│   └── preview/             # 页面效果截图（含 6 张官方 OAuth 备用链路）
 ├── server/                  # BFF（零依赖）
 │   ├── package.json
 │   ├── .env.example
 │   ├── src/
-│   │   ├── index.js         # 路由、静态托管、图片代理、OAuth 分发
+│   │   ├── index.js         # 路由、静态托管、图片代理、/api/oauth/* 与 /api/qr/* 分发
 │   │   ├── bili.js          # 上游客户端、身份、缓存、stale-on-error
-│   │   ├── normalize.js     # 5 套上游字段 → 统一模型
-│   │   ├── oauth.js         # 官方 OAuth 2.0：state/ticket、换 token、签名 2.0
+│   │   ├── normalize.js     # 5 套上游字段 → 统一模型（含 playurl / 弹幕）
+│   │   ├── qr_proxy.js      # Web 扫码登录同源代理：generate / poll / nav
+│   │   ├── oauth.js         # 官方 OAuth 2.0（备用）：state/ticket、换 token、签名 2.0
 │   │   ├── mock.js          # 降级逻辑
 │   │   └── mock-data.json   # 真实数据快照（2026-11-09）
 │   └── tool/                # 签名向量自检 + 授权链路自检
 └── app/                     # Flutter 工程（六平台骨架齐全）
-    ├── pubspec.yaml         # 仅 4 个依赖
+    ├── pubspec.yaml         # 仅 5 个运行时依赖（含 qr_flutter 4.0.0）
     ├── tool/                # verify_live.dart / verify_web.cjs / verify_oauth_web.cjs
     ├── web/                 # PWA 配置、启动占位页
     ├── android/ ios/ linux/ macos/ windows/
     └── lib/
-        ├── main.dart / app.dart   # main 启动时消费 ?oauth_ticket=
+        ├── main.dart / app.dart   # 启动时初始化 ServerConfig / qrSession / authSession，消费 ?oauth_ticket=
         ├── core/            # 配置、令牌、分区表、路径表、存储门面、导航、主题
         │   ├── glass_theme.dart  # GlassConfig / GlassScope / GlassClock / GlassPalette
         │   ├── tokens.dart       # 设计令牌：状态色 / 字号 / 圆角 / 间距 / 取色扩展
         │   ├── storage.dart      # LocalStore：本地持久化门面 + 能力探测
+        │   ├── server_config.dart # 运行时 BFF 地址（账号高级区可改，编译期 BFF_URL 作默认）
         │   ├── partitions.dart   # 分区表单一数据源（含各分区图标与主色）
         │   ├── api_paths.dart    # 接口路径单一数据源（纯 Dart）
         │   ├── nav_section.dart  # 导航项枚举（首页 / 搜索 / 我的 / 设置）
@@ -257,12 +297,15 @@ bili-lite/
         │   ├── navigation.dart   # 详情跳转与收藏切换的统一入口
         │   └── oauth_launcher.dart  # Web 同页导航 / 原生系统浏览器（条件导出）
         ├── router/          # app_routes.dart：集中路由表 AppRouter.generate
-        ├── data/            # models / api_client / bili_direct / oauth_api / repository
-        ├── state/           # 主题+玻璃 / 本地库 / auth_session（登录态持久化）/ 搜索历史
-        │                    #   / preferences（导航顺序 / 卡片样式 / 滚动隐藏底栏）/ 单例
+        ├── data/            # models / api_client / bili_direct / repository
+        │                    #   / qr_login_api（扫码登录主通道）/ oauth_api（备用通道）
+        ├── state/           # 主题+玻璃 / 本地库 / 搜索历史 / preferences / 单例
+        │                    #   / qr_session（扫码登录态，优先）/ auth_session（官方 OAuth 备用）
         ├── widgets/         # 封面、卡片、网格、骨架屏、状态视图、glass、统一 Logo/对话框/页头
         │                    #   / partition_sheet（分区浮层）/ segmented_switch（分段控件）
         └── features/        # shell / home / search / detail / library / player / account / settings
+                             #   account/：扫码主卡片、二维码弹层、统一身份门面、
+                             #             运行时授权服务设置、折叠的官方 OAuth 备用卡片
                              #   每个 feature 拆 controller + view 两层
 ```
 
@@ -277,7 +320,7 @@ bili-lite/
 | `MOCK_MODE` | `0` | 置 `1` 完全使用离线快照 |
 | `UPSTREAM_TIMEOUT` | `10000` | 上游超时（ms） |
 | `WEB_DIR` | `app/build/web` | Flutter Web 产物目录 |
-| `BFF_URL` | 自动 | **Flutter 编译参数**：`--dart-define=BFF_URL=http://<IP>:8787`，让原生端改走指定 BFF；官方 OAuth 也走这个地址 |
+| `BFF_URL` | 自动 | **Flutter 编译参数**：`--dart-define=BFF_URL=http://<IP>:8787`，让原生端改走指定 BFF；官方 OAuth 也走这个地址。**运行时可在账号面板「授权服务」里覆盖**（键 `bili_lite_bff_url`，优先级更高，打好的安装包也能改）；扫码登录不依赖它 |
 | `OFFLINE` | `0` | **Flutter 编译参数**：置 `1` 完全不发网络请求，纯内置快照；默认关闭（在线直连） |
 | `PUBLIC_BASE_URL` | `http://<host>` | 对外可访问的根地址，用于拼接回调与演示授权页链接 |
 | `BILI_CLIENT_ID` | 空 | **官方开放平台 Client ID**（公开值，可下发给客户端） |
@@ -294,45 +337,59 @@ read -rsp 'BILI_CLIENT_SECRET: ' BILI_CLIENT_SECRET; export BILI_CLIENT_SECRET; 
 
 ---
 
-## B 站账号：官方 OAuth 2.0
+## B 站账号登录
 
-登录**已实现**，走的是 B 站开放平台 [OAuth 2.0 授权码流程](https://openhome.bilibili.com/doc/4/eaf0e2b5-bde9-b9a0-9be1-019bb455701c)，
-用户授权后按需求把登录态**持久化到本机**。不登录也能浏览全部内容，两条链路互不影响。
+登录**已实现且开箱即用**，提供两条互相独立的链路，**不登录也能浏览全部内容**。
 
 | 能力 | 实现范围 | 交互方式 | 数据存储边界 | 合规判定 |
 | --- | --- | --- | --- | --- |
-| 官方登录 | ✅ **已实现**：2025-03 后的官方授权页 `account.bilibili.com/pc/account-pc/auth/oauth` | **首页顶栏账号按钮 / 「我的」页顶部账号卡片** → 展开完整面板 → 系统浏览器 / 同页打开官方授权页 → 同意 → 回调自动完成登录；原生端也可粘贴回调页的一次性授权码 | 本机持久化 `access_token`、`refresh_token`、过期时间、scope、openid / 昵称 / 头像 | 官方授权码流程；不接触密码 / Cookie / `SESSDATA` / `bili_jct` |
-| 凭证续期 | ✅ 按官方 `refresh_token` 端点续期 | 启动时临期自动续期，也可手动点「刷新凭证」 | 新 token 覆盖本地旧值；每个 `refresh_token` 只用一次 | 官方明确 `expires_in` 是 UTC 绝对时间戳，按秒解析后再转毫秒 |
-| 退出登录 | ✅ 清除本机全部凭证 | 确认对话框 → 本机 5 个键值一并删除 | 不留残值；B 站侧授权需到官方账号设置里解除 | 官方会在用户解除授权时推送事件，本项目未接入推送，故在 UI 明确提示 |
-| 应用内播放 | ✅ **已实现**：自建播放器（Web 用同源 `<video>`，Android / iOS 用 `video_player`） | 详情页点封面 → 应用内播放页；画面直接解码 B 站 mp4，不跳出应用 | 服务端 `/api/stream` 代取视频流（带 Referer 与访客身份，绕过防盗链与 CORS）；不注入 OAuth token | 只调用 B 站公开的 `playurl` 接口取公开直链，不触碰账号态内容 |
+| **扫码登录（主通道）** | ✅ **已实现**：B 站官方 Web 扫码登录 `passport.bilibili.com/x/passport-login/web/qrcode/*` | **首页顶栏账号按钮 / 「我的」页账号卡片 → 「扫码登录」** → 弹层显示二维码 → 手机 B 站 App 扫码并确认 → 每 2 秒轮询，成功后自动关闭弹层；可「刷新二维码」/「取消」 | 本机持久化 `SESSDATA` / `bili_jct` / `DedeUserID` 等 Web 登录 Cookie 与 `mid` / 昵称 / 头像 | 走 B 站官方登录页，用户本人扫码授权；**不接触账号密码**，Cookie 只发往 `bilibili.com`，不上传第三方 |
+| 官方 OAuth 2.0（备用） | ✅ 已实现：2025-03 后的官方授权页 `account.bilibili.com/pc/account-pc/auth/oauth` | 账号面板展开「官方 OAuth 与授权服务（高级 / 可选）」→ 系统浏览器 / 同页打开官方授权页 → 同意 → 回调自动完成登录；原生端也可粘贴回调页的一次性授权码 | 本机持久化 `access_token`、`refresh_token`、过期时间、scope、openid / 昵称 / 头像 | 官方授权码流程；不接触密码 / Cookie / `SESSDATA` / `bili_jct` |
+| 凭证续期 | ✅ 官方 OAuth 按 `refresh_token` 端点续期；扫码通道 Cookie 失效时重新扫码 | 启动时临期自动续期，也可手动点「刷新凭证」 | 新 token 覆盖本地旧值；每个 `refresh_token` 只用一次 | 官方明确 `expires_in` 是 UTC 绝对时间戳，按秒解析后再转毫秒 |
+| 退出登录 | ✅ 清除本机全部凭证 | 确认对话框 → **扫码 Cookie 与官方 OAuth token 一并删除** | 不留半套凭证；B 站侧授权需到官方账号设置里解除 | 官方会在用户解除授权时推送事件，本项目未接入推送，故在 UI 明确提示 |
+| 应用内播放 | ✅ **已实现**：自建播放器（Web 用同源 `<video>`，Android / iOS 用 `video_player`） | 详情页点封面 → 应用内播放页；画面直接解码 B 站 mp4，不跳出应用 | 服务端 `/api/stream` 代取视频流（带 Referer 与访客身份，绕过防盗链与 CORS）；不注入任何登录凭证 | 只调用 B 站公开的 `playurl` 接口取公开直链，不触碰账号态内容 |
 | 弹幕 | ✅ **已实现**：解析 B 站 `dm/list.so` 的 deflate 压缩 XML | 播放页叠加层，支持开关 / 不透明度 / 字号；滚动、顶部固定、底部固定三种模式各有独立轨道 | 服务端解压后转 JSON（Web），原生端用 `ZLibDecoder(raw: true)` 本地解压 | 只读公开弹幕接口，不发送任何弹幕 |
 | 官方播放器（备用） | ✅ B 站官方[站外外链播放器](https://player.bilibili.com) | 播放页「在官方站点打开」入口 | 只传 `bvid` 与分 P | 作为内置播放失败时的降级路径保留 |
-| 评论 / 投币 / 点赞 | **未实现**，提供「评论 / 投币」入口 | 唤起官方客户端 / 网页，在官方完成互动 | 不代持凭证、不调用写接口 | 已开放 scope（`USER_INFO` / `USER_DATA` / `ARC_*` / `ATC_*` 等）全是创作者与账号侧只读能力，**不含观看侧互动**；模拟 Web 写接口需 `SESSDATA` + `bili_jct` + WBI 签名，属于协议禁止的自动化访问 |
+| 评论 / 投币 / 点赞 | **未实现**，提供「评论 / 投币」入口 | 唤起官方客户端 / 网页，在官方完成互动 | 不代持凭证、不调用写接口 | 已开放 scope 全是创作者与账号侧只读能力，**不含观看侧互动**；即便扫码登录持有 Cookie，模拟 Web 写接口仍需逆向 WBI 签名，属于协议禁止的自动化访问，本项目明确不做 |
 
-### 启用真实登录
+**为什么把扫码登录设为主通道**：官方 OAuth 2.0 的 `client_secret` 只能留在一个持有密钥的服务端，
+而独立安装包（APK / exe / Web 静态产物）里没有这个服务端；`10.0.2.2:8787` 又只是 Android 模拟器的专用别名，
+真机不可达，release 包原先还禁用了明文 HTTP。三层叠加的结果就是旧版账号面板显示「授权服务不可用」，
+用户看不到任何可用的登录方式。扫码登录直连 B 站官方登录域，不需要开放平台凭证、不需要自建后端，
+因此成为默认入口；官方 OAuth 收进折叠高级区，只服务已自建或部署授权服务的场景。
+即便 `AuthSession.refreshConfig()` 探活失败，只要扫码登录态有效，UI 仍显示「已登录」（由 `AccountIdentity` 合并两路身份）。
+
+### 启用官方 OAuth 备用通道
 
 官方 OAuth 要求开发者资质，代码无法代你申请。四步：
 
 1. 在 [openhome.bilibili.com](https://openhome.bilibili.com) 完成开发者入驻、创建应用；
 2. 申请并等待 `USER_INFO` 等 scope 审核通过；
 3. 把 `BILI_REDIRECT_URI`（形如 `https://你的域名/api/oauth/callback`）填入应用的「授权回调域」，**必须与环境变量一字不差**；
-4. 在受信任终端注入 `BILI_CLIENT_ID` / `BILI_CLIENT_SECRET` / `BILI_REDIRECT_URI` 后重启 BFF。
+4. 在受信任终端注入 `BILI_CLIENT_ID` / `BILI_CLIENT_SECRET` / `BILI_REDIRECT_URI` 后重启 BFF，
+   并在账号面板「授权服务」里填上这个 BFF 地址（真机填局域网 IP 或 https 域名，运行时生效）。
 
-未配置时 `/api/oauth/config` 返回 `configured: false`，设置页显示「未配置官方开放平台凭证，登录入口已停用」并列出缺失项，
-**不会伪造登录按钮或假账号**。授权页 2025 年 3 月已迁移，旧的 `passport.bilibili.com/register/pc_oauth2.html` 不再使用。
+未配置时 `/api/oauth/config` 返回 `configured: false`，备用卡片显示「本通道为可选备用」并提示日常用扫码登录，
+**不会伪造登录按钮或假账号，也不会遮住扫码登录入口**。授权页 2025 年 3 月已迁移，
+旧的 `passport.bilibili.com/register/pc_oauth2.html` 不再使用。
 
 ### 本地存储明细
 
 | 位置 | 键 | 内容 |
 | --- | --- | --- |
-| `SharedPreferences`（Web → localStorage，原生 → 平台偏好） | `bili_lite_oauth_access_token` / `bili_lite_oauth_refresh_token` | 官方 OAuth 凭证，仅本机 |
+| `SharedPreferences`（Web → localStorage，原生 → 平台偏好） | `bili_lite_qr_cookie` / `bili_lite_qr_user` | **扫码登录主通道**：B 站 Web 登录 Cookie（`SESSDATA` / `bili_jct` / `DedeUserID` 等）与 `mid` / 昵称 / 头像，仅本机 |
+| 同上 | `bili_lite_bff_url` | 运行时填写的授权服务地址（留空恢复默认） |
+| 同上 | `bili_lite_oauth_access_token` / `bili_lite_oauth_refresh_token` | 官方 OAuth 备用通道凭证，仅本机 |
 | 同上 | `bili_lite_oauth_expires_at` / `bili_lite_oauth_scopes` | 过期时间（毫秒 UTC）、已授权权限点 |
 | 同上 | `bili_lite_oauth_user` | `USER_INFO` 的 openid / 昵称 / 头像 URL |
-| BFF 进程内存 | `state`（5 分钟）/ `ticket`（60 秒） | 一次性，消费即删，**不落盘** |
+| BFF 进程内存 | `state`（5 分钟）/ `ticket`（60 秒） | 官方 OAuth 一次性数据，消费即删，**不落盘** |
 | BFF 环境变量 | `client_secret` | 只在服务端进程内，不进响应 / 日志 / Git |
 
-**明确不存**：账号密码、Cookie、`SESSDATA`、`bili_jct`、`client_secret`、授权码 `code`。
-`SharedPreferences` 不是硬件加密存储——真机发布建议把 token 迁到 iOS Keychain / Android Keystore。
+**明确不存**：账号密码、`client_secret`、授权码 `code`；官方 OAuth 通道不存任何 Cookie。
+**扫码登录会保存上述 Web 登录 Cookie**——这是它与官方 OAuth 最本质的区别，账号面板「本地数据边界」里已如实标注。
+Cookie 只随请求发往 `*.bilibili.com`，不上传第三方；Web 端的 `/api/qr/*` 代理不缓存、不落盘、不打印 Cookie。
+`SharedPreferences` 不是硬件加密存储，且扫码 Cookie 的敏感度高于 OAuth token —— 真机发布建议把凭证迁到
+iOS Keychain / Android Keystore。
 收藏 / 历史 / 稍后再看 / 搜索历史继续留在本机，**不关联账号、不上传**。
 
 > **关于跨端持久化**：本地存储统一走 `app/lib/core/storage.dart` 的 `LocalStore` 门面，
@@ -341,23 +398,25 @@ read -rsp 'BILI_CLIENT_SECRET: ' BILI_CLIENT_SECRET; export BILI_CLIENT_SECRET; 
 > （Windows / Linux / macOS 在 2.0.x 上是缺失的）。若探测失败，会退化为
 > 「仅本次会话有效」并明确提示，而不是静默丢数据。
 
-### 演示授权模式（仅本地自检）
+### 演示授权模式（仅本地自检 · 官方 OAuth 备用通道）
 
 ```bash
 cd server && BILI_OAUTH_SANDBOX=1 node src/index.js
 ```
 
-用于在没有开放平台凭证时验证「授权码 → 换 token → 本地持久化 → 续期 → 退出登录」全链路。
+用于在没有开放平台凭证时验证**备用通道**「授权码 → 换 token → 本地持久化 → 续期 → 退出登录」全链路。
 它用本地模拟授权页代替官方页，**不连接 B 站、不产生真实凭证**，UI 顶部有醒目的「非 B 站官方」标签，
-生产必须保持 `BILI_OAUTH_SANDBOX=0`。链路自检：
+生产必须保持 `BILI_OAUTH_SANDBOX=0`。扫码登录主通道走真实 B 站登录页，不受这个开关影响。链路自检：
 
 ```bash
 cd server && npm run verify:oauth          # 签名向量 + 授权流程，30 项
 cd app && NODE_PATH=$(npm root -g) node tool/verify_oauth_web.cjs   # Web 端到端，20 项
 ```
 
-**为什么不走「Cookie 登录 + 逆向 WBI 写接口」**：那要求第三方长期持有用户完整账号凭证，
-等于把账号权限交给非官方应用；同时触发风控、可能导致账号受限，也与
+**为什么扫码登录只用来读资料、不做写接口**：扫码登录确实会在本机保存 Web 登录 Cookie，
+但项目只用它们调用 `/x/web-interface/nav` 读取昵称 / 头像等只读身份信息，
+**不逆向 WBI 签名、不模拟 Web 写接口、不代用户点赞 / 投币 / 发评论**。
+后者会触发风控、可能导致账号受限，也与
 [开放平台开发者服务协议](https://open.bilibili.com/agreement/developer-service)
 「不得以自动程序获取服务 / 数据」冲突。因此本项目宁可少几项互动功能，也不做这层。
 
@@ -365,7 +424,7 @@ cd app && NODE_PATH=$(npm root -g) node tool/verify_oauth_web.cjs   # Web 端到
 
 ## 重构记录
 
-本工程完成过两轮重构：
+本工程完成过四轮重构 / 改造：
 
 1. **第一轮 · 全项目收敛** —— 统一存储门面、设计令牌收敛、分区表去重、重复组件抽取、
    跨端明文流量策略收紧、深色模式对比度修复、分页与生命周期缺陷修复等。
@@ -373,19 +432,25 @@ cd app && NODE_PATH=$(npm root -g) node tool/verify_oauth_web.cjs   # Web 端到
    全部页面拆 controller/view 两层、沉浸式视频卡片、分区浮层菜单、详情页信息层级重排、
    可配置导航与滚动隐藏底栏；同时修复了「首页整页蒙白纱」「卡片显示 `[object Object]`」
    「详情页在桌面浏览器上读不到内容」三个真实缺陷。
+3. **第三轮 · 应用内播放、弹幕与刷新修复** —— 自建播放器（Web DOM `<video>` + 弹幕 canvas /
+   原生 `video_player`）、解析 deflate 压缩弹幕 XML、修复「换一批」永远拿同一批内容的缓存游标缺陷、
+   把账号入口前置到首页顶栏与「我的」页；同时把 Android `compileSdk` 抬到 33 修掉 CI AAR metadata 失败。
+4. **第四轮 · 扫码登录主通道与授权服务降级** —— 新增 B 站官方 Web 扫码登录（原生直连 / Web 走同源代理），
+   把必须依赖 `client_secret` 服务端的官方 OAuth 收进折叠高级区，新增运行时 BFF 地址配置、统一账号身份门面、
+   Android 真机明文放行与 Cookie 数据边界说明。修掉了独立安装包里「授权服务不可用、无法登录」的根因。
 
 逐条的问题清单与改进方案见 **[docs/重构说明.md](docs/重构说明.md)**。
 
 ## 已知限制
 
 - **评论条数**：未登录的访客身份下，B 站 `/x/v2/reply` 通常只开放少量热评（实测 3 条，`is_end=true`）。已验证 WBI 签名的新接口结果相同，属于上游策略而非实现问题。
-- **播放依赖官方外链播放器**：Web 端在应用内以 iframe 嵌入，原生端用系统浏览器打开同一个官方播放器 URL（Flutter 3.0 六端没有统一的 WebView 插件，故不自行伪造播放器）。部分 UP 主可关闭「允许嵌入」；大会员 / 高画质内容需在官方播放器中由用户自行登录，本应用不解析播放地址、不接触视频流。
+- **应用内播放的已知边界**：Web 端用同源 `<video>` + 弹幕 canvas，Android / iOS 用 `video_player`；桌面端（Windows / macOS / Linux）没有对应插件实现，会明确提示改用系统播放器。清晰度目前固定 `qn=64`（720P），大会员 / 高画质内容仍需在官方站点登录观看；本应用只取公开 `playurl` 直链，不注入登录凭证、不解析受限内容。
 - **接口稳定性**：上游可能调整字段或加风控；Web 链路的适配点是 `server/src/normalize.js`，原生直连链路是 `app/lib/data/bili_direct.dart`，两处规则同构，改动需同步；所有接口都有真实快照兜底。
-- **登录依赖授权服务端**：官方 OAuth 的 `client_secret` 不能放进客户端（APK / exe / Web 产物都可被反编译），所以原生端登录也必须连到一个持有密钥的 BFF。默认指向 `10.0.2.2:8787` / `127.0.0.1:8787`，真机请用 `--dart-define=BFF_URL=https://你的授权域名` 指向已部署实例；不登录不影响浏览内容。
-- **登录态不是硬件加密**：`SharedPreferences` 在当前依赖约束下是最简方案；生产发布建议接 Keychain / Keystore。跨端持久化依赖 `shared_preferences ≥ 2.1.0`（六端原生实现齐全），版本被降到 2.0.x 时桌面端会退化为会话内存态 —— 工程已锁定 `^2.1.0` 并在设置页显示实际探测结果。
+- **官方 OAuth 备用通道依赖授权服务端**：`client_secret` 不能放进客户端（APK / exe / Web 产物都可被反编译），所以这一路必须连到持有密钥的 BFF。`10.0.2.2:8787` 只在 Android 模拟器有效，真机请在账号面板「授权服务」里填局域网 IP 或 https 域名（运行时生效）。**扫码登录主通道不受此限制**；不登录也不影响浏览内容。
+- **登录态不是硬件加密**：`SharedPreferences` 在当前依赖约束下是最简方案；扫码登录保存的 Web Cookie 敏感度高于 OAuth token，生产发布更应接 Keychain / Keystore。跨端持久化依赖 `shared_preferences ≥ 2.1.0`（六端原生实现齐全），版本被降到 2.0.x 时桌面端会退化为会话内存态 —— 工程已锁定 `^2.1.0` 并在设置页显示实际探测结果。
 - **解除授权推送未接入**：官方会在用户主动解除授权或注销时向厂商推送消息，本项目没有消息接收端点，因此本地可能残留已失效 token；调用开放接口返回失效时请重新授权，或点「退出登录」清除。
 - **scope 由开放平台审核决定**：授权页只展示已审核通过的权限点；新增 scope 后已授权用户必须重新授权，代码里通过 `BILI_OAUTH_SCOPES` 配置，不会自行扩张权限。
-- **工具链**：本工程在 Flutter 3.0 / Dart 2.17 上验证通过，依赖刻意压到 4 个，较新 SDK 同样可用。
+- **工具链**：本工程在 Flutter 3.0 / Dart 2.17 上验证通过，运行时依赖刻意压到 5 个（`qr_flutter 4.0.0` 是最后一个兼容 Dart 2.17 的二维码库版本），较新 SDK 同样可用。
 - **Web 玻璃模糊**：html renderer 下不启用 `BackdropFilter`，改用 Canvas 渐变、边缘折射环与镜面亮斑模拟透镜；光学层与内容合并为单一渲染对象，避免 html renderer 的负 z-index canvas 盖住文字。原生端启用真实背景模糊。若改用 `flutter build web --web-renderer canvaskit`，需自行评估首包体积与字体加载。
 - **着色 Tinted 档偏保守**：为保证文字可读性抬高了不透明度，观感比通透 Clear 更接近实色卡片；想看最典型的 iOS 26 透镜效果请用默认的通透档。
 
@@ -394,6 +459,8 @@ cd app && NODE_PATH=$(npm root -g) node tool/verify_oauth_web.cjs   # Web 端到
 ## 合规提示
 
 请遵守哔哩哔哩用户协议、robots 规则与相关数据法规：**仅供学习与个人使用，勿商用、勿高频抓取、勿绕过登录鉴权获取受限内容**。
-登录严格走官方 OAuth 2.0 授权码流程，不抓取 Web 登录态、不逆向 WBI 签名、不解析播放地址、不代用户执行需要登录的写操作，
-也不把 token 用于未授权 scope。收藏 / 历史 / 搜索历史与 OAuth 凭证全部留在设备本地，不上传、不共享、不关联第三方。
+两种登录都只读取用户本人的资料（昵称 / 头像）：扫码登录走 B 站官方 Web 登录页，用户扫码确认后把 Cookie 留在本机、
+只用于调用只读的 `/x/web-interface/nav`；官方 OAuth 走授权码流程，不抓取 Web 登录态、不把 token 用于未授权 scope。
+两路都**不逆向 WBI 签名、不解析受限播放地址、不代用户执行需要登录的写操作**。
+收藏 / 历史 / 搜索历史与两类登录凭证全部留在设备本地，不上传、不共享、不关联第三方。
 `client_secret` 只在授权服务端环境变量里，请勿提交到代码仓库或写进客户端构建产物。

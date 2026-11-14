@@ -201,8 +201,11 @@ class OAuthApi {
       }
     } catch (e) {
       throw OAuthException(
-        '无法连接授权服务（${ApiConfig.oauthDisplayBase}）。官方登录需要授权服务端持有 '
-        'client_secret，请确认 BFF 已启动或已配置 BFF_URL。',
+        '连不上授权服务（${ApiConfig.oauthDisplayBase}）。这是官方 OAuth 备用通道，'
+        '需要一个你自己启动或部署的、持有 client_secret 的服务端。'
+        '注意 10.0.2.2 只在 Android 模拟器有效，真机请在「授权服务」里填电脑的'
+        '局域网 IP（如 http://192.168.1.10:8787）或已部署的 https 域名。'
+        '日常登录请直接用「扫码登录」，它不需要任何授权服务。',
       );
     }
 

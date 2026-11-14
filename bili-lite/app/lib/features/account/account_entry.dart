@@ -3,20 +3,16 @@ import 'package:flutter/material.dart';
 import '../../core/config.dart';
 import '../../core/theme.dart';
 import '../../core/tokens.dart';
-import '../../state/auth_session.dart';
-import '../../state/globals.dart';
 import '../../widgets/glass.dart';
+import 'account_identity.dart';
 import 'account_view.dart';
+import 'qr_account_card.dart';
+import 'server_config_card.dart';
 
 /// 账号入口卡片：登录态的紧凑展示 + 一键展开完整登录面板。
 ///
-/// 为什么要单独做这个卡片：
-///   之前账号卡片只藏在设置页最底部，用户在首页 / 「我的」页完全看不到，
-///   常常以为「这应用没法登录」。现在把入口前置到「我的」页顶部和首页顶栏，
-///   点一下就能展开完整的登录 / 授权码流程（内部复用 [AccountCard]）。
-///
-/// 状态与 [AccountCard] 完全一致，都来自 [AuthSession]：
-///   未配置凭证 / 服务不可用 / 未登录 / 授权中 / 已登录。
+/// 状态来自 [AccountIdentity]（合并扫码登录与官方 OAuth 两路），
+/// 这样即使授权服务探活失败，已扫码登录的用户看到的仍是「已登录」。
 class AccountEntry extends StatelessWidget {
   const AccountEntry({Key? key}) : super(key: key);
 
@@ -24,23 +20,22 @@ class AccountEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     final sub = context.subTextColor;
     return AnimatedBuilder(
-      animation: authSession,
+      animation: AccountIdentity.changes,
       builder: (context, _) {
-        final s = authSession;
         return GlassPanel(
           radius: 20,
           padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
           onTap: () => _expand(context),
           child: Row(
             children: <Widget>[
-              _avatar(s),
+              _avatar(),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      _title(s),
+                      _title(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -48,7 +43,7 @@ class AccountEntry extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      _subtitle(s),
+                      _subtitle(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 11.5, color: sub, height: 1.4),
@@ -66,9 +61,8 @@ class AccountEntry extends StatelessWidget {
     );
   }
 
-  Widget _avatar(AuthSession s) {
-    final face = s.user?.face ?? '';
-    final logged = s.signedIn;
+  Widget _avatar() {
+    final face = AccountIdentity.face;
     return CircleAvatar(
       radius: 21,
       backgroundColor: AppColors.pink.withOpacity(0.16),
@@ -76,7 +70,9 @@ class AccountEntry extends StatelessWidget {
           face.isNotEmpty ? NetworkImage(ApiConfig.image(face)) : null,
       child: face.isEmpty
           ? Icon(
-              logged ? Icons.person_rounded : Icons.login_rounded,
+              AccountIdentity.signedIn
+                  ? Icons.person_rounded
+                  : Icons.login_rounded,
               size: 21,
               color: AppColors.pink,
             )
@@ -84,53 +80,23 @@ class AccountEntry extends StatelessWidget {
     );
   }
 
-  String _title(AuthSession s) {
-    switch (s.status) {
-      case AuthStatus.signedIn:
-        return s.user?.name ?? '已授权用户';
-      case AuthStatus.authorizing:
-        return '等待完成授权';
-      case AuthStatus.unconfigured:
-        return '登录入口未启用';
-      case AuthStatus.unavailable:
-        return '授权服务不可用';
-      case AuthStatus.error:
-        return '登录出错';
-      default:
-        return '登录 B 站账号';
-    }
+  String _title() {
+    if (AccountIdentity.signedIn) return AccountIdentity.name;
+    return '登录 B 站账号';
   }
 
-  String _subtitle(AuthSession s) {
-    switch (s.status) {
-      case AuthStatus.signedIn:
-        final t = s.tokens;
-        if (t == null) return '已通过官方 OAuth 2.0 授权';
-        return t.isExpired ? '登录已过期，点击重新授权' : '已通过官方 OAuth 2.0 授权';
-      case AuthStatus.authorizing:
-        return '已打开授权页，完成后回到此处粘贴一次性授权码';
-      case AuthStatus.unconfigured:
-        return '服务端未配置开放平台凭证，点这里查看配置清单';
-      case AuthStatus.unavailable:
-        return '连不上授权服务，请确认 BFF 已启动';
-      case AuthStatus.error:
-        return s.error.isEmpty ? '点击查看详情' : s.error;
-      case AuthStatus.unknown:
-        return '正在读取授权服务配置…';
-      default:
-        return '点这里展开完整登录流程';
-    }
-  }
+  String _subtitle() => AccountIdentity.subtitle;
 
   Future<void> _expand(BuildContext context) async {
     await showAccountSheet(context);
   }
 }
 
-/// 展开完整的账号 / 登录面板（底部弹层）。
+/// 展开完整的账号面板（底部弹层）。
 ///
-/// 首页顶栏与「我的」页顶部都通过它进入登录流程，
-/// 保证两处入口的行为完全一致，不会出现两个版本的登录界面。
+/// 首页顶栏与「我的」页顶部共用这一个入口，保证行为一致。
+/// 内容顺序刻意把「扫码登录」放最上面：它是唯一不依赖服务端的通道。
+/// 官方 OAuth 及其授权服务设置收在可折叠的「高级」区，默认不干扰用户。
 Future<void> showAccountSheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
@@ -140,8 +106,15 @@ Future<void> showAccountSheet(BuildContext context) {
   );
 }
 
-class _AccountSheet extends StatelessWidget {
+class _AccountSheet extends StatefulWidget {
   const _AccountSheet();
+
+  @override
+  State<_AccountSheet> createState() => _AccountSheetState();
+}
+
+class _AccountSheetState extends State<_AccountSheet> {
+  bool _advanced = false;
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +144,34 @@ class _AccountSheet extends StatelessWidget {
                 ),
               ),
             ),
-            const AccountCard(),
+            const QrAccountCard(),
+            const SizedBox(height: 12),
+            GlassPanel(
+              radius: 18,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              onTap: () => setState(() => _advanced = !_advanced),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.tune_rounded,
+                      size: 17, color: AppColors.pink),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text('官方 OAuth 与授权服务（高级 / 可选）',
+                        style: TextStyle(
+                            fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  ),
+                  Icon(_advanced
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded),
+                ],
+              ),
+            ),
+            if (_advanced) ...<Widget>[
+              const SizedBox(height: 12),
+              const ServerConfigCard(),
+              const SizedBox(height: 12),
+              const AccountCard(),
+            ],
           ],
         ),
       ),

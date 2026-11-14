@@ -18,7 +18,7 @@ on:
       release_tag:
         description: "Release tag to publish assets to"
         required: false
-        default: "bili-lite-v1.5.0"
+        default: "bili-lite-v1.6.0"
       publish:
         description: "Upload artifacts to the GitHub Release"
         required: false
@@ -49,7 +49,7 @@ concurrency:
 
 env:
   FLUTTER_VERSION: ${{ inputs.flutter_version || '3.0.0' }}
-  RELEASE_TAG: ${{ inputs.release_tag || 'bili-lite-v1.5.0' }}
+  RELEASE_TAG: ${{ inputs.release_tag || 'bili-lite-v1.6.0' }}
   PUBLISH: ${{ inputs.publish || 'true' }}
 
 jobs:
