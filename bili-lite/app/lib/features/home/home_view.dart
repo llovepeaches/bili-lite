@@ -9,6 +9,7 @@ import '../../core/tokens.dart';
 import '../../data/models.dart';
 import '../../state/globals.dart';
 import '../account/account_entry.dart';
+import '../account/account_identity.dart';
 import '../../widgets/app_logo.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/page_header_card.dart';
@@ -262,15 +263,16 @@ class _AccountButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: authSession,
+      animation: AccountIdentity.changes,
       builder: (context, _) {
-        final s = authSession;
-        final face = s.user?.face ?? '';
+        final face = AccountIdentity.face;
         if (face.isEmpty) {
           // 登录后即使没有头像，也要和「未登录」区分开：
           // 未登录是登录箭头，已登录是人形图标。
           return Icon(
-            s.signedIn ? Icons.person_rounded : Icons.login_rounded,
+            AccountIdentity.signedIn
+                ? Icons.person_rounded
+                : Icons.login_rounded,
             size: 18,
             color: AppColors.pink,
           );

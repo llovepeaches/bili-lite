@@ -9,11 +9,15 @@ import '../../widgets/glass.dart';
 import '../../widgets/state_views.dart';
 import 'account_controller.dart';
 
-/// 设置页里的「B 站账号」卡片（视图层）。
+/// 「官方 OAuth 2.0」备用通道卡片（视图层）。
 ///
-/// 对应官方 OAuth 2.0 授权码流程：授权在 B 站官方页面完成，BFF 持有
-/// client_secret 换取 token，客户端领取后按用户要求持久化到本机。
-/// 没有开放平台凭证时明确显示「未配置」，绝不伪造登录入口。
+/// 现在默认登录走 [QrAccountCard] 的扫码登录——它不需要任何服务端，
+/// 独立安装包也能用。本卡片只服务于「已有自建授权服务、想走开放平台
+/// token」的高级场景，收在账号面板的折叠区里，不干扰日常使用。
+///
+/// 官方流程：授权在 B 站官方页面完成，BFF 持有 client_secret 换取 token，
+/// 客户端领取后按用户要求持久化到本机。没有凭证时明确显示「未配置」，
+/// 绝不伪造登录入口。
 ///
 /// 视图只负责渲染与转发交互，具体流程见 [AccountController]。
 class AccountCard extends StatefulWidget {
@@ -61,7 +65,7 @@ class _AccountCardState extends State<AccountCard> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                const Expanded(child: SectionTitle(title: 'B 站账号')),
+                const Expanded(child: SectionTitle(title: '官方 OAuth（备用）')),
                 if (authSession.busy)
                   const SizedBox(
                     width: 15,
@@ -114,7 +118,8 @@ class _AccountCardState extends State<AccountCard> {
         const SizedBox(height: 10),
         _text(
           '官方 OAuth 2.0 要求先在 openhome.bilibili.com 完成开发者入驻、创建应用、'
-          '申请并审核通过 scope、备案授权回调域。本应用不会用 Cookie 或抓登录态的方式冒充官方登录。',
+          '申请并审核通过 scope、备案授权回调域，并由服务端持有 client_secret。'
+          '本通道不使用 Cookie 或抓登录态；日常登录请用主卡片的「扫码登录」。',
           sub,
         ),
         if (missing.isNotEmpty) ...<Widget>[
@@ -139,11 +144,13 @@ class _AccountCardState extends State<AccountCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _notice('授权服务不可用。', AppStatus.danger),
+        _notice('授权服务不可用（本通道为可选备用）。', AppStatus.danger),
         const SizedBox(height: 10),
         _text(
           '官方 OAuth 的 client_secret 只能保存在服务端，客户端无法独立完成授权码换 token。'
-          '请启动 BFF 或用 --dart-define=BFF_URL=... 指向已部署的授权服务。',
+          '这是可选的高级通道：请在上方「授权服务地址」里填自建服务地址，'
+          '或用 --dart-define=BFF_URL=... 在编译期指定。'
+          '日常登录直接用主卡片的「扫码登录」即可，不需要任何授权服务。',
           sub,
         ),
         const SizedBox(height: 10),
@@ -346,14 +353,17 @@ class _AccountCardState extends State<AccountCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text('本地数据边界',
+          const Text('本地数据边界（仅本通道）',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           _text(
-            '本机保存：access_token、refresh_token、过期时间、已授权 scope、openid / 昵称 / 头像。'
-            '不保存：密码、Cookie、SESSDATA、bili_jct、client_secret、授权码 code。'
-            'token 由用户在官方页面授权后取得，仅留在本机、不上传；'
-            'shared_preferences 不是硬件加密存储，真机发布建议改用 Keychain / Keystore。',
+            '官方 OAuth 通道本机保存：access_token、refresh_token、过期时间、'
+            '已授权 scope、openid / 昵称 / 头像；不保存密码、Cookie、'
+            'SESSDATA、bili_jct、client_secret、授权码 code。'
+            'token 由用户在官方页面授权后取得，仅留在本机、不上传。'
+            '注意：主通道「扫码登录」不同，它会保存 B 站 Web 登录 Cookie，'
+            '详见主卡片下方说明。shared_preferences 不是硬件加密存储，'
+            '真机发布建议改用 Keychain / Keystore。',
             sub,
           ),
         ],

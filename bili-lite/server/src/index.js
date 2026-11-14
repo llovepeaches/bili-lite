@@ -31,6 +31,7 @@ const {
 const N = require('./normalize');
 const mock = require('./mock');
 const oauth = require('./oauth');
+const qrProxy = require('./qr_proxy');
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -487,6 +488,15 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, status, { code: status, message: err.message || '上游错误', data: null });
       console.log(`  GET ${pathname} → ${status} ${err.message}`);
     }
+    return;
+  }
+
+  // 扫码登录代理：Web 端受 CORS 限制不能直连 passport.bilibili.com，
+  // 由同源 BFF 转发。Cookie 只在响应里回给浏览器，不落盘、不进日志。
+  if (pathname.startsWith('/api/qr/')) {
+    const out = await qrProxy.handle(req, parsed);
+    sendJson(res, out.status || 200, out.json);
+    console.log(`  ${req.method} ${pathname} → ${out.status || 200}`);
     return;
   }
 
