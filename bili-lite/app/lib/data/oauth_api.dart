@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../core/config.dart';
@@ -176,7 +177,11 @@ class OAuthApi {
   OAuthApi._();
   static final OAuthApi instance = OAuthApi._();
 
-  final http.Client _client = http.Client();
+  http.Client _client = http.Client();
+
+  /// 仅供测试注入：用来断言启动关键路径不发起任何网络请求。
+  @visibleForTesting
+  set debugClient(http.Client client) => _client = client;
 
   Future<Map<String, dynamic>> _call(
     String path, {

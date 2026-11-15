@@ -79,9 +79,19 @@ class AuthSession extends ChangeNotifier {
 
   bool get sandbox => _config?.sandbox == true;
 
-  Future<void> init() async {
+  /// 启动关键路径专用：只恢复本机凭证，**不发任何网络请求**。
+  ///
+  /// 官方 OAuth 已降级为备用通道，扫码登录不依赖 BFF；让它的探活挡在
+  /// `runApp()` 之前会让独立安装包白屏等满 15s 超时。探活改由 `main()`
+  /// 在首屏之后调度 [refreshConfig]。
+  Future<void> initLocal() async {
     await LocalStore.instance.init();
     await _restore();
+  }
+
+  /// 完整初始化（本地恢复 + 网络探活），保留给后台任务与测试使用。
+  Future<void> init() async {
+    await initLocal();
     await refreshConfig();
   }
 
