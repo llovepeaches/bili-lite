@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 示例应用图标：一枚悬浮玻璃胶囊，深色底 + 高光弧线 + 折射色散边。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 圆角底板 -->
+    <path
+        android:fillColor="#1B1D22"
+        android:pathData="M24,8 L84,8 A16,16 0 0 1 100,24 L100,84 A16,16 0 0 1 84,100 L24,100 A16,16 0 0 1 8,84 L8,24 A16,16 0 0 1 24,8 Z" />
+
+    <!-- 玻璃胶囊本体 -->
+    <path
+        android:fillAlpha="0.35"
+        android:fillColor="#CFE4FF"
+        android:pathData="M34,36 L74,36 A18,18 0 0 1 92,54 L92,54 A18,18 0 0 1 74,72 L34,72 A18,18 0 0 1 16,54 L16,54 A18,18 0 0 1 34,36 Z" />
+
+    <!-- 左上高光弧 -->
+    <path
+        android:fillAlpha="0.75"
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,42 A14,14 0 0 1 50,40 L44,44 A9,9 0 0 0 36,45 Z" />
+
+    <!-- 底部 RGB 色散边（模拟折射色散） -->
+    <path
+        android:fillAlpha="0.55"
+        android:fillColor="#FF5C7A"
+        android:pathData="M28,74 L44,74 L40,78 L26,78 Z" />
+    <path
+        android:fillAlpha="0.45"
+        android:fillColor="#5CE1FF"
+        android:pathData="M64,74 L80,74 L82,78 L66,78 Z" />
+</vector>

@@ -1,0 +1,17 @@
+# Gradle / 构建产物
+.gradle/
+build/
+app/build/
+captures/
+*.hprof
+
+# 编译出的 APK 体积大，只作为 Release 资产分发，不进版本库
+artifacts/
+
+# 本机路径（含 SDK 位置，不可提交）
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
