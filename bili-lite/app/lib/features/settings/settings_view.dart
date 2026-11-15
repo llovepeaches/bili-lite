@@ -84,34 +84,47 @@ class _SettingsPageState extends State<SettingsPage> {
           const AccountCard(),
           const SizedBox(height: 14),
 
-          // 账号与数据边界
+          // 账号与数据边界：长说明默认折叠，标题下只留一行摘要
           SettingsCard(
             title: '账号与数据边界',
+            initiallyCollapsed: true,
+            storageKey: 'bili_lite_settings_boundary',
+            collapsedHint: '四类 Web 登录 + 官方 OAuth 的凭证边界：'
+                'Cookie 只存本机、密码不落盘、请求只发往 bilibili.com。',
             children: const <Widget>[
               _Paragraph(
-                '登录采用 B 站开放平台官方 OAuth 2.0 授权码流程：在官方授权页完成授权，'
-                '由授权服务端用 client_secret 换取 access_token，客户端领取后把凭证保存在本机。'
-                '全程不接触账号密码，也不读取 Cookie、SESSDATA 或 bili_jct——'
-                '抓取 Web 登录态复用这些字段不是官方登录方式。'),
+                '本应用提供四类 B 站 Web 登录通道：扫码登录、账号密码登录、'
+                '短信验证码登录、Cookie 登录；另有官方开放平台 OAuth 2.0 作为'
+                '可选高级通道。前四类拿到的是同一份 B 站 Web 登录 Cookie'
+                '（SESSDATA / bili_jct / DedeUserID 等），统一保存在本机，'
+                '只发往 bilibili.com，不经过也不上传给任何第三方服务。'),
               SizedBox(height: 10),
               _Paragraph(
-                'client_secret 只存在于授权服务端的环境变量里，不写入客户端、安装包、'
-                '日志或 Git；授权码 code 也不落客户端。本机保存的 token 仅用于调用'
-                '开放平台已授权的只读接口（当前为 USER_INFO），不上传、不共享。'),
+                '扫码登录是推荐方式：由 B 站直接下发登录态，不需要开放平台凭证。'
+                '账号密码与短信验证码走 B 站 Web 登录接口，密码用 B 站下发的 '
+                'RSA 公钥在本机加密后提交；这两类接口受 B 站极验滑块保护，'
+                '遇到人机验证要求时本应用会如实提示，绝不伪造凭证或假装登录成功，'
+                '此时请改用扫码登录，或在浏览器登录后复制 Cookie。'),
               SizedBox(height: 10),
               _Paragraph(
-                '官方已开放的 scope 面向创作者与账号侧（USER_INFO、USER_DATA、'
-                'ARC_BASE、ARC_DATA、ATC_BASE、ATC_DATA 等），不包含观看侧的'
-                '评论、投币、点赞接口。因此这些互动仍通过「评论 / 投币」入口在官方客户端完成，'
-                '本应用不会用 OAuth token 去调用未开放的写接口，也不会逆向 WBI 签名。'),
+                'Cookie 登录由你手动粘贴浏览器中已登录的 Cookie，应用先用 nav '
+                '接口校验有效后才写入本机；校验不通过绝不保存、绝不显示「已登录」。'
+                '本机不保存账号密码、短信验证码，也不缓存 Cookie 到服务端。'
+                '登录态存放在 shared_preferences（Web 为 localStorage），'
+                '不是硬件加密存储，请勿在公用设备上使用。'),
+              SizedBox(height: 10),
+              _Paragraph(
+                '官方 OAuth 通道由授权服务端用 client_secret 换取 access_token，'
+                '客户端只领取 token 并保存在本机，全程不接触账号密码、不读取 Cookie。'
+                'client_secret 只存在于服务端环境变量，不写入客户端、安装包、日志或 Git。'
+                '官方已开放的 scope 不含观看侧评论 / 投币 / 点赞写接口，'
+                '这些互动仍通过 B 站官方客户端完成；本应用不调用未开放写接口，'
+                '也不逆向 WBI 签名。'),
               SizedBox(height: 10),
               _Paragraph(
                 '播放使用 B 站官方站外外链播放器（player.bilibili.com）：只传 BV 号与分 P，'
-                '不解析播放地址、不接触视频流、不把 OAuth 登录态注入播放器；'
-                '登录态、清晰度与版权控制均由官方域名负责。'),
-              SizedBox(height: 10),
-              _Paragraph(
-                '收藏、观看历史、稍后再看、搜索历史与外观设置继续留在本机，不关联账号。'
+                '不解析播放地址、不接触视频流、不把登录态注入播放器。'
+                '收藏、观看历史、稍后再看、搜索历史与外观设置留在本机，不关联账号。'
                 '「退出登录」只清除本机凭证；如需在 B 站侧彻底解除授权，'
                 '请到 B 站账号设置的授权管理中操作。'),
             ],
@@ -132,6 +145,8 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _serviceSection(Color sub) {
     return SettingsCard(
       title: '数据服务',
+      storageKey: 'bili_lite_settings_service',
+      collapsedHint: '连接状态、服务地址、数据来源与缓存条目。',
       children: <Widget>[
         AnimatedBuilder(
           animation: appState,
@@ -185,6 +200,8 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _dataSection() {
     return SettingsCard(
       title: '本地数据',
+      storageKey: 'bili_lite_settings_local',
+      collapsedHint: '收藏 / 历史 / 稍后再看条目数与清空入口。',
       children: <Widget>[
         AnimatedBuilder(
           animation: library,
@@ -214,6 +231,14 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _aboutSection(Color sub) {
     return SettingsCard(
       title: '关于',
+      initiallyCollapsed: true,
+      storageKey: 'bili_lite_settings_about',
+      collapsedHint: '非官方第三方客户端，数据全部留在本机。展开查看设计说明与使用须知。',
+      // 版本号与支持平台是高频查看信息，折叠时仍然常驻。
+      alwaysVisible: const <Widget>[
+        SettingsRow('App 版本', kAppVersionLabel),
+        SettingsRow('支持平台', 'Android / iOS / Web / Windows / macOS / Linux'),
+      ],
       children: <Widget>[
         const _Paragraph(
           'Bili Lite 是一个基于哔哩哔哩公开 Web 数据的非官方第三方客户端，'
@@ -225,10 +250,8 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 10),
         const _Paragraph(
           '收藏、历史、稍后再看与搜索历史全部保存在本机，不上传任何服务器，'
-          '浏览内容无需登录；B 站账号登录仅用于官方 OAuth 授权与展示用户公开资料。'),
-        const SizedBox(height: 10),
-        const SettingsRow('App 版本', kAppVersionLabel),
-        const SettingsRow('支持平台', 'Android / iOS / Web / Windows / macOS / Linux'),
+          '浏览内容无需登录；B 站账号登录仅用于展示用户公开资料与在本机保存'
+          '登录态，不用于任何写入操作。'),
         const SizedBox(height: 12),
         GlassPanel(
           radius: 14,

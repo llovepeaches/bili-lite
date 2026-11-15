@@ -11,18 +11,11 @@ import '../../widgets/state_views.dart';
 import '../../widgets/video_grid.dart';
 import 'search_controller.dart';
 
-const List<String> _hotWords = <String>[
-  'Flutter 教程',
-  '崩坏：星穹铁道',
-  '科技数码',
-  '纪录片',
-  '编程入门',
-  '美食',
-  '音乐现场',
-  '动画短片',
-];
-
 /// 搜索页视图。逻辑与状态在 [SearchController] 里。
+///
+/// 落地页只保留搜索历史与简短空状态。原先的「大家都在搜」是一组写死在
+/// 客户端的推荐词，既不来自 B 站实时热搜，也无差别推给所有用户，容易被
+/// 误认成真实榜单；移除后搜索页不再编造内容，历史与空状态保持原样。
 class SearchView extends StatefulWidget {
   const SearchView({Key? key}) : super(key: key);
 
@@ -227,46 +220,6 @@ class _SearchViewState extends State<SearchView> {
               ),
               const SizedBox(height: 26),
             ],
-            const SectionTitle(title: '大家都在搜'),
-            Wrap(
-              spacing: 9,
-              runSpacing: 9,
-              children: _hotWords.asMap().entries.map((entry) {
-                final index = entry.key;
-                final word = entry.value;
-                return GlassChip(
-                  leading: index < 3
-                      ? Container(
-                          width: 17,
-                          height: 17,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: <Color>[
-                                  AppColors.pink.withOpacity(index == 0 ? 1 : 0.85),
-                                  AppColors.pink.withOpacity(index == 0 ? 0.8 : 0.5),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(6),
-                              border:
-                                  Border.all(color: Colors.white54, width: 0.7),
-                            ),
-                          child: Text('${index + 1}',
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700)),
-                        )
-                      : null,
-                  label: word,
-                  radius: 12,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  labelStyle: const TextStyle(fontSize: 12.5),
-                  onTap: () => _search(word),
-                );
-              }).toList(),
-            ),
             const SizedBox(height: 40),
             Center(
               child: Column(
