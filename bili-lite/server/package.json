@@ -8,8 +8,10 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "mock": "MOCK_MODE=1 node src/index.js",
-    "check": "node --check src/index.js && node --check src/bili.js && node --check src/normalize.js && node --check src/mock.js && node --check src/oauth.js",
-    "verify:oauth": "node tool/verify_oauth_sign.js && node tool/verify_oauth_flow.js"
+    "check": "node --check src/index.js && node --check src/bili.js && node --check src/normalize.js && node --check src/mock.js && node --check src/oauth.js && node --check src/qr_proxy.js && node --check src/passport_proxy.js && node --check tool/verify_passport_proxy.js && node --check tool/verify_danmaku.js",
+    "verify:oauth": "node tool/verify_oauth_sign.js && node tool/verify_oauth_flow.js",
+    "verify:passport": "node tool/verify_passport_proxy.js",
+    "verify:danmaku": "node tool/verify_danmaku.js"
   },
   "engines": {
     "node": ">=18"

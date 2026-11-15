@@ -32,6 +32,7 @@ const N = require('./normalize');
 const mock = require('./mock');
 const oauth = require('./oauth');
 const qrProxy = require('./qr_proxy');
+const passportProxy = require('./passport_proxy');
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -495,6 +496,16 @@ const server = http.createServer(async (req, res) => {
   // 由同源 BFF 转发。Cookie 只在响应里回给浏览器，不落盘、不进日志。
   if (pathname.startsWith('/api/qr/')) {
     const out = await qrProxy.handle(req, parsed);
+    sendJson(res, out.status || 200, out.json);
+    console.log(`  ${req.method} ${pathname} → ${out.status || 200}`);
+    return;
+  }
+
+  // 账号密码 / 短信验证码登录代理：同样只做协议转发。
+  // 日志只记路径与 HTTP 状态，绝不打印请求体（含 RSA 密文）、响应 Cookie
+  // 或上游业务消息，避免登录态与敏感参数进日志。
+  if (pathname.startsWith('/api/passport/')) {
+    const out = await passportProxy.handle(req, parsed);
     sendJson(res, out.status || 200, out.json);
     console.log(`  ${req.method} ${pathname} → ${out.status || 200}`);
     return;

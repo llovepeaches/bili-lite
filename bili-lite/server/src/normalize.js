@@ -345,14 +345,42 @@ function parseDanmakuXml(xml) {
   return out;
 }
 
-/** 解 XML 实体。 */
+/**
+ * 解 XML / HTML 实体。
+ *
+ * 弹幕文字显示错误的三个根因（均已在本函数修掉）：
+ *  1. 数字实体经常是 BMP 之外的码点（emoji，如 `&#128512;`）。
+ *     `String.fromCharCode` 只取低 16 位，会把 😀 解成私用区的 ``，
+ *     必须用 `String.fromCodePoint`；
+ *  2. B 站弹幕里十六进制实体 `&#x1F602;` 很常见，旧正则只认十进制，
+ *     结果把实体字符串原样画到屏幕上；
+ *  3. `&nbsp;` 等 HTML 命名实体没有还原，也会变成可见的 `&nbsp;` 字面量。
+ *
+ * `&amp;` 刻意放在最后解：`&amp;lt;` 应当解成字面的 `&lt;`，
+ * 不能二次解码成 `<`。
+ */
 function decodeXml(s) {
+  const fromCodePoint = (value, radix) => {
+    const n = Number.parseInt(value, radix);
+    // 代理区（0xD800~0xDFFF）不是合法 Unicode 标量值，
+    // fromCodePoint 会原样吐出一个孤立代理字符，画到屏幕上仍是乱码。
+    if (!Number.isFinite(n) || n < 0 || n > 0x10ffff ||
+        (n >= 0xd800 && n <= 0xdfff)) return '';
+    try {
+      return String.fromCodePoint(n);
+    } catch (_) {
+      // 代理区等非法码点不让弹幕整体挂掉，直接丢弃该实体。
+      return '';
+    }
+  };
   return String(s ?? '')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => fromCodePoint(hex, 16))
+    .replace(/&#(\d+);/g, (_, dec) => fromCodePoint(dec, 10))
     .replace(/&amp;/g, '&');
 }
 
