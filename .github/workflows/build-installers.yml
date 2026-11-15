@@ -18,7 +18,7 @@ on:
       release_tag:
         description: "Release tag to publish assets to"
         required: false
-        default: "bili-lite-v1.6.0"
+        default: "bili-lite-v0.1.0"
       publish:
         description: "Upload artifacts to the GitHub Release"
         required: false
@@ -49,7 +49,9 @@ concurrency:
 
 env:
   FLUTTER_VERSION: ${{ inputs.flutter_version || '3.0.0' }}
-  RELEASE_TAG: ${{ inputs.release_tag || 'bili-lite-v1.6.0' }}
+  # workflow_dispatch 用 input 默认值；push tag 触发时直接用 tag 名，
+  # 这样「后续发版递增版本号」只需改 pubspec + app_version.dart + input 默认值。
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name || 'bili-lite-v0.1.0' }}
   PUBLISH: ${{ inputs.publish || 'true' }}
 
 jobs:
@@ -61,6 +63,27 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
+      # 版本单一真源强制校验：pubspec、Dart 常量、发布 tag 必须逐字一致。
+      # 旧版曾出现「设置页写死 1.4.0 / pubspec 1.6.0 / tag v1.6.0」三处漂移，
+      # 这一步让漏改在构建阶段就失败，而不是等用户装到手机上才发现。
+      - name: Verify version sync
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          pub=$(grep -E "^version:" bili-lite/app/pubspec.yaml | sed -E "s/^version:[[:space:]]*//" | tr -d '\r')
+          ver=$(grep -E "^const String kAppVersion = " bili-lite/app/lib/core/app_version.dart | sed -E "s/.*'([^']+)'.*/\1/")
+          build=$(grep -E "^const int kAppBuildNumber = " bili-lite/app/lib/core/app_version.dart | sed -E "s/.*= ([0-9]+);/\1/")
+          echo "pubspec=$pub  app_version.dart=$ver+$build  RELEASE_TAG=$RELEASE_TAG"
+          if [ "$pub" != "$ver+$build" ]; then
+            echo "::error::pubspec.yaml 与 app_version.dart 版本不一致（$pub vs $ver+$build）"
+            exit 1
+          fi
+          if [ "$RELEASE_TAG" != "bili-lite-v$ver" ]; then
+            echo "::error::release_tag 与版本号不一致（$RELEASE_TAG vs bili-lite-v$ver）"
+            exit 1
+          fi
 
       - name: Install Flutter ${{ env.FLUTTER_VERSION }}
         uses: ./.github/actions/setup-flutter

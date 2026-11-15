@@ -70,8 +70,8 @@ class AppState extends ChangeNotifier {
 
     _initialized = true;
     notifyListeners();
-    // 服务探测不阻塞首屏：失败时页面仍可用本地兜底数据
-    refreshServerInfo();
+    // 只负责本地偏好。网络探测由 main() 在 runApp 之后统一调度，
+    // 避免启动阶段多个 fire-and-forget 请求与首屏渲染争抢资源。
   }
 
   Future<void> refreshServerInfo() async {

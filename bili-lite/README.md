@@ -128,18 +128,18 @@ flutter build web
 
 | 平台 | Release 资产 |
 | --- | --- |
-| Android | `BiliLite-1.6.0-Android.apk` |
-| Windows | `BiliLite-1.6.0-Windows-Setup.exe` |
-| Web + BFF | `bili-lite-web-v1.6.0.tar.gz` / `.zip` |
-| iOS | `BiliLite-1.6.0-UNSIGNED.ipa`（编译验证）、`BiliLite-1.6.0-iOS-ADHOC.ipa`（ad-hoc 签名） |
-| 源码 | `bili-lite-v1.6.0-src.tar.gz` / `.zip` |
+| Android | `BiliLite-0.1.0-Android.apk` |
+| Windows | `BiliLite-0.1.0-Windows-Setup.exe` |
+| Web + BFF | `bili-lite-web-v0.1.0.tar.gz` / `.zip` |
+| iOS | `BiliLite-0.1.0-UNSIGNED.ipa`（编译验证）、`BiliLite-0.1.0-iOS-ADHOC.ipa`（ad-hoc 签名） |
+| 源码 | `bili-lite-v0.1.0-src.tar.gz` / `.zip` |
 
-最新发行版：[bili-lite-v1.6.0](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v1.6.0)
+最新发行版：[bili-lite-v0.1.0](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v0.1.0)
 
 手动触发一次全平台构建：
 
 ```bash
-gh workflow run build-installers.yml -f release_tag=bili-lite-v1.6.0 -f publish=true -f run_ios=true
+gh workflow run build-installers.yml -f release_tag=bili-lite-v0.1.0 -f publish=true -f run_ios=true
 ```
 
 Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入库），可覆盖升级。
@@ -147,13 +147,47 @@ Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入
 iOS 需要加 `-f run_ios=true` 才会构建（macOS runner）：
 
 ```bash
-gh workflow run build-installers.yml -f release_tag=bili-lite-v1.6.0 -f publish=true -f run_ios=true
+gh workflow run build-installers.yml -f release_tag=bili-lite-v0.1.0 -f publish=true -f run_ios=true
 ```
 
 产出 `UNSIGNED.ipa`（编译验证）与 `iOS-ADHOC.ipa`（ad-hoc 自签名，侧载工具可重签）。
 **要出能直接装进 iPhone 的 IPA**，还需 Apple Developer Program 与 App Store Connect
 API Key（四个 Secret，见 [iOS 打包指南](docs/iOS打包指南.md)），走 TestFlight 分发。
 完整的「三道坎 + 三条路径」说明见 [iOS 打包指南](docs/iOS打包指南.md)。
+
+### 版本规则与更新检查
+
+当前版本 **v0.1.0**（`pubspec.yaml` 为 `0.1.0+1`）。后续发版从这里按语义化版本递增，
+**应用内显示的版本必须与发布 tag 一致**：
+
+| 来源 | 值 |
+| --- | --- |
+| `app/pubspec.yaml` | `version: 0.1.0+1` |
+| `app/lib/core/app_version.dart` | `kAppVersion = '0.1.0'`、`kAppBuildNumber = 1` |
+| 自动派生的发布 tag | `bili-lite-v0.1.0` |
+| 设置页「关于 / 版本更新」 | 直接读同一常量，不再手写 |
+
+发版只改 `pubspec.yaml` 与 `app_version.dart` 的两个常量，并同步 workflow input 的
+`release_tag` 默认值。CI 的 `Verify version sync` 步骤逐项比对，漏改直接让构建失败——
+旧版曾出现「设置页写死 1.4.0 / pubspec 1.6.0 / tag v1.6.0」三处漂移。
+`push tag` 触发时 tag 名直接由 `github.ref_name` 取，不必再改 workflow。
+
+**应用内更新检查**：设置页 →「版本更新」卡片，可手动点「检查更新」，启动后每 12 小时
+也会自动静默检查一次。数据源是 GitHub Releases 的公开 `releases/latest` 接口，只读取
+`tag_name` 与发布页地址，不上传任何本机数据；离线、限流、超时或解析失败只显示
+「检查未完成」，绝不误报成「有新版本」。点击「前往下载 / 发布页」用 `url_launcher`
+打开系统浏览器。
+
+### 应用图标与启动速度（v0.1.0）
+
+* **图标重绘**：粉→紫渐变 squircle + 白色「bi」字标，替换六端共用的 Flutter 默认蓝色
+  「F」。资源由 `app/tool/generate_icons.py` 幂等生成，覆盖 Android（含 adaptive icon）、
+  iOS、macOS、Windows `.ico`、Web PWA 全套；应用内 `AppLogo` 同步改为同一套视觉。
+  预览见 `docs/preview/app-icon-v0.1.0.png`。
+* **启动提速**：`main()` 把本地初始化并行化，并把 BFF 健康探测、官方 OAuth 备用通道
+  探活（原先 15s 超时）、OAuth 回调领取与更新检查全部挪到 `runApp()` 之后，各自带
+  8s 上限与异常兜底。`test/startup_test.dart` 用计数 HTTP 客户端断言启动关键路径
+  **不发起任何网络请求**。
 
 ---
 
@@ -424,7 +458,7 @@ cd app && NODE_PATH=$(npm root -g) node tool/verify_oauth_web.cjs   # Web 端到
 
 ## 重构记录
 
-本工程完成过四轮重构 / 改造：
+本工程完成过五轮重构 / 改造：
 
 1. **第一轮 · 全项目收敛** —— 统一存储门面、设计令牌收敛、分区表去重、重复组件抽取、
    跨端明文流量策略收紧、深色模式对比度修复、分页与生命周期缺陷修复等。
@@ -438,6 +472,9 @@ cd app && NODE_PATH=$(npm root -g) node tool/verify_oauth_web.cjs   # Web 端到
 4. **第四轮 · 扫码登录主通道与授权服务降级** —— 新增 B 站官方 Web 扫码登录（原生直连 / Web 走同源代理），
    把必须依赖 `client_secret` 服务端的官方 OAuth 收进折叠高级区，新增运行时 BFF 地址配置、统一账号身份门面、
    Android 真机明文放行与 Cookie 数据边界说明。修掉了独立安装包里「授权服务不可用、无法登录」的根因。
+5. **第五轮 · 品牌图标、启动提速、版本基线与更新检查** —— 重绘六端图标并提供幂等生成脚本；
+   把启动关键路径上的网络请求全部移出 `runApp()` 之前；版本基线重置为 v0.1.0，建立
+   `app_version.dart` 单一真源与 CI 强制同步校验；设置页新增基于 GitHub Releases 的更新检查。
 
 逐条的问题清单与改进方案见 **[docs/重构说明.md](docs/重构说明.md)**。
 
