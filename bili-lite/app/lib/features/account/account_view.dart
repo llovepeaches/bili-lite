@@ -361,7 +361,8 @@ class _AccountCardState extends State<AccountCard> {
             '已授权 scope、openid / 昵称 / 头像；不保存密码、Cookie、'
             'SESSDATA、bili_jct、client_secret、授权码 code。'
             'token 由用户在官方页面授权后取得，仅留在本机、不上传。'
-            '注意：主通道「扫码登录」不同，它会保存 B 站 Web 登录 Cookie，'
+            '注意：主通道（扫码 / 账号密码 / 短信验证码 / Cookie）与官方 OAuth '
+            '不同，四条通道都会保存同一份 B 站 Web 登录 Cookie，'
             '详见主卡片下方说明。shared_preferences 不是硬件加密存储，'
             '真机发布建议改用 Keychain / Keystore。',
             sub,

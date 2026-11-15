@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../core/config.dart';
@@ -97,7 +97,12 @@ class QrLoginApi {
   QrLoginApi._();
   static final QrLoginApi instance = QrLoginApi._();
 
-  final http.Client _client = http.Client();
+  http.Client _client = http.Client();
+
+  /// 测试注入点：让 `QrSession.applyCookie()` 的「nav 校验」能离线验证。
+  /// 与 `PassportApi.debugClient` / `OAuthApi.debugClient` 保持同一约定。
+  @visibleForTesting
+  set debugClient(http.Client client) => _client = client;
 
   static const String _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '

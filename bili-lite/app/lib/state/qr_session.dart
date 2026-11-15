@@ -4,16 +4,44 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../core/storage.dart';
+import '../data/bili_direct.dart';
+import '../data/passport_api.dart';
 import '../data/qr_login_api.dart';
 
 enum QrStatus { signedOut, generating, waiting, scanned, expired, signedIn, error }
 
-/// 扫码登录态（独立于官方 OAuth 的 [AuthSession]）。
+/// 拿到 B 站 Web 登录 Cookie 的具体通道。
 ///
-/// 为什么单独一个 Session：官方 OAuth 链路依赖「授权服务端持有 client_secret」，
+/// 扫码 / 账号密码 / 短信验证码 / 直接粘贴 Cookie 的产物都是同一份 Cookie，
+/// 因此共用 [QrSession] 这一份登录态，只在这里记录「从哪条路进来的」，
+/// 供账号卡片如实展示，避免再引入多套互相打架的身份状态。
+enum LoginMethod { qr, password, sms, cookie }
+
+extension LoginMethodLabel on LoginMethod {
+  String get label {
+    switch (this) {
+      case LoginMethod.qr:
+        return '扫码登录';
+      case LoginMethod.password:
+        return '账号密码登录';
+      case LoginMethod.sms:
+        return '短信验证码登录';
+      case LoginMethod.cookie:
+        return 'Cookie 登录';
+    }
+  }
+}
+
+/// B 站 Web 登录态（独立于官方 OAuth 的 [AuthSession]）。
+///
+/// 扫码 / 账号密码 / 短信验证码 / 直接粘贴 Cookie 四条通道的产物都是
+/// **同一份 B 站 Web 登录 Cookie**，因此统一由本 Session 管理，只额外记录
+/// [LoginMethod] 用于展示。这样身份展示、退出登录、数据边界只需一套实现。
+///
+/// 为什么独立于官方 OAuth：OAuth 链路依赖「授权服务端持有 client_secret」，
 /// 独立安装包里没有这个服务，导致 `AuthSession.refreshConfig()` 探活失败后
-/// 把整个账号状态压成 unavailable。扫码登录不需要任何服务端，必须能独立成立，
-/// 不能被 BFF 是否在线影响。UI 层按「扫码登录优先、OAuth 兜底」合并两路身份。
+/// 把整个账号状态压成 unavailable。Web 登录不需要任何服务端，必须能独立成立，
+/// 不能被 BFF 是否在线影响。UI 层按「Web 登录优先、OAuth 兜底」合并两路身份。
 ///
 /// 数据边界（与 OAuth 不同，必须如实告知用户）：
 ///   存：B 站 Web 登录 Cookie（SESSDATA / bili_jct / DedeUserID 等）、mid / 昵称 / 头像。
@@ -24,6 +52,7 @@ class QrSession extends ChangeNotifier {
 
   static const String _kCookie = 'bili_lite_qr_cookie';
   static const String _kUser = 'bili_lite_qr_user';
+  static const String _kMethod = 'bili_lite_qr_login_method';
 
   static const Duration pollInterval = Duration(seconds: 2);
 
@@ -44,6 +73,9 @@ class QrSession extends ChangeNotifier {
   String _cookie = '';
   String get cookie => _cookie;
 
+  LoginMethod _method = LoginMethod.qr;
+  LoginMethod get method => _method;
+
   Timer? _timer;
   bool _polling = false;
 
@@ -55,6 +87,7 @@ class QrSession extends ChangeNotifier {
     await LocalStore.instance.init();
     final store = LocalStore.instance;
     _cookie = store.getString(_kCookie) ?? '';
+    _method = _methodFromString(store.getString(_kMethod) ?? '');
     final rawUser = store.getString(_kUser) ?? '';
     if (rawUser.isNotEmpty) {
       try {
@@ -64,10 +97,39 @@ class QrSession extends ChangeNotifier {
         _user = null;
       }
     }
+    // 恢复登录态时同步给原生直连通道，否则重启后请求仍按访客身份发出。
+    BiliDirect.userCookie = _cookie;
     if (_cookie.isNotEmpty) {
       _set(QrStatus.signedIn, '已登录');
     } else {
       _set(QrStatus.signedOut, '');
+    }
+  }
+
+  /// 不依赖增强枚举的 `.name`（Dart 2.17 兼容）。
+  static LoginMethod _methodFromString(String raw) {
+    switch (raw) {
+      case 'password':
+        return LoginMethod.password;
+      case 'sms':
+        return LoginMethod.sms;
+      case 'cookie':
+        return LoginMethod.cookie;
+      default:
+        return LoginMethod.qr;
+    }
+  }
+
+  static String _methodToString(LoginMethod method) {
+    switch (method) {
+      case LoginMethod.password:
+        return 'password';
+      case LoginMethod.sms:
+        return 'sms';
+      case LoginMethod.cookie:
+        return 'cookie';
+      default:
+        return 'qr';
     }
   }
 
@@ -123,7 +185,7 @@ class QrSession extends ChangeNotifier {
           break;
         case QrPollState.success:
           _stopTimer();
-          await _complete(result.cookie);
+          await _complete(result.cookie, LoginMethod.qr);
           break;
         case QrPollState.failed:
           _stopTimer();
@@ -140,12 +202,13 @@ class QrSession extends ChangeNotifier {
     }
   }
 
-  Future<void> _complete(String cookie) async {
+  Future<void> _complete(String cookie, LoginMethod method) async {
     if (cookie.isEmpty) {
       _set(QrStatus.error, '登录成功但没拿到可用凭证，请重新扫码');
       return;
     }
     _cookie = cookie;
+    _method = method;
     try {
       _user = await _api.profile(cookie);
     } on QrLoginException catch (_) {
@@ -160,14 +223,42 @@ class QrSession extends ChangeNotifier {
     _set(QrStatus.signedIn, '登录成功');
   }
 
+  /// 非扫码通道（账号密码 / 短信 / 直接粘贴 Cookie）的统一落地入口。
+  ///
+  /// 与 [_complete] 的区别：**严格校验**。扫码拿到的 Cookie 由 B 站直接下发，
+  /// 可以容忍 nav 接口风控；用户手工粘贴的 Cookie 则必须先经 nav 确认有效，
+  /// 否则绝不写入本地、绝不显示「已登录」——避免留下半套凭证却查不出原因。
+  /// 校验通过后才复用同一套持久化与账号资料，登录态与扫码完全等价。
+  ///
+  /// 抛出 [PassportException] 让 UI 展示具体原因。
+  Future<void> applyCookie(String cookie, LoginMethod method) async {
+    _set(QrStatus.generating, '正在校验登录凭证…');
+    try {
+      final user = await PassportApi.instance.verifyCookie(cookie);
+      _cookie = cookie;
+      _user = user;
+      _method = method;
+      await _persist();
+      _set(QrStatus.signedIn, '登录成功（${method.label}）');
+    } catch (e) {
+      _set(QrStatus.error, '登录凭证无效：$e');
+      rethrow;
+    }
+  }
+
   Future<void> _persist() async {
+    // 四条登录通道（扫码 / 密码 / 短信 / 粘贴 Cookie）与退出登录都经过这里，
+    // 在这一处同步登录凭证，原生直连请求就能随登录态实时切换。
+    BiliDirect.userCookie = _cookie;
     final store = LocalStore.instance;
     if (_cookie.isEmpty) {
       await store.remove(_kCookie);
       await store.remove(_kUser);
+      await store.remove(_kMethod);
       return;
     }
     await store.setString(_kCookie, _cookie);
+    await store.setString(_kMethod, _methodToString(_method));
     final u = _user;
     await store.setString(_kUser, u == null ? '' : json.encode(u.toJson()));
   }
@@ -190,6 +281,7 @@ class QrSession extends ChangeNotifier {
     _cookie = '';
     _user = null;
     _challenge = null;
+    _method = LoginMethod.qr;
     await _persist();
     _set(QrStatus.signedOut, '');
   }

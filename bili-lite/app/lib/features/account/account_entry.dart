@@ -6,6 +6,7 @@ import '../../core/tokens.dart';
 import '../../widgets/glass.dart';
 import 'account_identity.dart';
 import 'account_view.dart';
+import 'passport_login_card.dart';
 import 'qr_account_card.dart';
 import 'server_config_card.dart';
 
@@ -95,8 +96,9 @@ class AccountEntry extends StatelessWidget {
 /// 展开完整的账号面板（底部弹层）。
 ///
 /// 首页顶栏与「我的」页顶部共用这一个入口，保证行为一致。
-/// 内容顺序刻意把「扫码登录」放最上面：它是唯一不依赖服务端的通道。
-/// 官方 OAuth 及其授权服务设置收在可折叠的「高级」区，默认不干扰用户。
+/// 内容顺序刻意把「扫码登录」放最上面：它不需要任何服务端、也不需要
+/// 人机验证，是成功率最高的通道。其次是「其他登录方式」（密码 / 短信 /
+/// Cookie），官方 OAuth 及其授权服务设置收在最下方的可折叠「高级」区。
 Future<void> showAccountSheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
@@ -120,7 +122,7 @@ class _AccountSheetState extends State<_AccountSheet> {
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     return DraggableScrollableSheet(
-      initialChildSize: 0.75,
+      initialChildSize: 0.85,
       minChildSize: 0.4,
       maxChildSize: 0.94,
       expand: false,
@@ -145,6 +147,8 @@ class _AccountSheetState extends State<_AccountSheet> {
               ),
             ),
             const QrAccountCard(),
+            const SizedBox(height: 12),
+            const PassportLoginCard(),
             const SizedBox(height: 12),
             GlassPanel(
               radius: 18,

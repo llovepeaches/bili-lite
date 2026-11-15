@@ -1,13 +1,15 @@
 import 'package:flutter/foundation.dart' show Listenable;
 
 import '../../state/globals.dart';
+import '../../state/qr_session.dart';
 
 /// 两路登录身份的统一视图。
 ///
-/// 扫码登录（[qrSession]）是主通道：不依赖任何服务端，装上就能用。
+/// B 站 Web 登录（[qrSession]，含扫码 / 密码 / 短信 / Cookie 四条通道）是主通道：
+/// 不依赖任何服务端，装上就能用。
 /// 官方 OAuth（[authSession]）是备用通道：需要自建持有 client_secret 的授权服务。
 ///
-/// 优先级：**扫码登录优先**。原因是 `AuthSession.refreshConfig()` 会去探活 BFF，
+/// 优先级：**Web 登录优先**。原因是 `AuthSession.refreshConfig()` 会去探活 BFF，
 /// 连不上就把状态压成 unavailable；独立安装包里 BFF 本来就不存在，不能让这次
 /// 探活失败盖掉一个已经有效的扫码登录态。
 class AccountIdentity {
@@ -39,14 +41,14 @@ class AccountIdentity {
     return '';
   }
 
-  /// 「扫码登录」/「官方 OAuth 2.0」。
+  /// 「扫码 / 账号密码 / 短信 / Cookie 登录」或「官方 OAuth 2.0」。
   static String get methodLabel =>
-      qrSession.signedIn ? '扫码登录' : '官方 OAuth 2.0 授权';
+      qrSession.signedIn ? qrSession.method.label : '官方 OAuth 2.0 授权';
 
   /// 给账号入口卡片用的一行副标题。
   static String get subtitle {
-    if (qrSession.signedIn) return '已通过 B 站扫码登录';
+    if (qrSession.signedIn) return '已通过${qrSession.method.label}';
     if (authSession.signedIn) return '已通过官方 OAuth 2.0 授权';
-    return '点这里用 B 站 App 扫码登录';
+    return '点这里登录 B 站账号（扫码 / 密码 / 短信 / Cookie）';
   }
 }

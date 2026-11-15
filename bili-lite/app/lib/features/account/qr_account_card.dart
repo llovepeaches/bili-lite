@@ -59,11 +59,12 @@ class QrAccountCard extends StatelessWidget {
       children: <Widget>[
         _text(
           '用 B 站 App 扫码即可登录，不需要开放平台凭证，也不需要单独部署授权服务。'
-          '登录后可查看本机账号资料；Cookie 只保存在本机。',
+          '下方还提供账号密码、短信验证码与 Cookie 登录；四条通道拿到的是'
+          '同一份 Web 登录 Cookie，只保存在本机。',
           sub,
         ),
         const SizedBox(height: 12),
-        _kv('登录方式', 'B 站官方 Web 扫码登录', sub),
+        _kv('登录方式', '扫码 / 密码 / 短信 / Cookie', sub),
         _kv('授权服务', '不需要', sub),
         const SizedBox(height: 14),
         GlassChip(
@@ -157,7 +158,7 @@ class QrAccountCard extends StatelessWidget {
     final ok = await showConfirmDialog(
       context,
       title: '退出 B 站账号？',
-      message: '将删除本机保存的登录凭证（扫码登录为 B 站登录 Cookie，'
+      message: '将删除本机保存的登录凭证（Web 登录为 B 站登录 Cookie，'
           '官方 OAuth 为 access_token / refresh_token）与账号资料，不可撤销。',
       confirmLabel: '退出登录',
     );
@@ -179,8 +180,9 @@ class QrAccountCard extends StatelessWidget {
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           _text(
-            '扫码登录会保存 B 站 Web 登录 Cookie（SESSDATA / bili_jct / DedeUserID 等）'
-            '以及昵称 / 头像 / mid；不保存密码、验证码。Cookie 只发往 bilibili.com，'
+            '扫码 / 密码 / 短信 / Cookie 四条通道都会保存同一份 B 站 Web 登录 Cookie'
+            '（SESSDATA / bili_jct / DedeUserID 等）以及昵称 / 头像 / mid；'
+            '不保存密码、验证码。Cookie 只发往 bilibili.com，'
             '不上传第三方。本地存储不是硬件加密存储，真机发布建议改用 '
             'Keychain / Keystore。若改用下方官方 OAuth 通道，则保存的是 '
             'access_token / refresh_token，不碰 Cookie。',
