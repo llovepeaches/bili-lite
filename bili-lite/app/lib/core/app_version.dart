@@ -7,8 +7,8 @@
 ///
 /// CI 的 `Verify version sync` 步骤会逐项比对，任一处不一致直接让构建失败，
 /// 避免再次出现「设置页写死 1.4.0 / pubspec 1.6.0 / tag v1.6.0」三处漂移。
-const String kAppVersion = '0.1.0';
-const int kAppBuildNumber = 1;
+const String kAppVersion = '0.1.1';
+const int kAppBuildNumber = 2;
 
 /// 展示用完整版本串，与 pubspec 的 version 字段逐字一致。
 const String kAppVersionLabel = '$kAppVersion+$kAppBuildNumber';
