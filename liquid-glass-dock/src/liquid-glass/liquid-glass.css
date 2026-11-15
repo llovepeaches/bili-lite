@@ -1,0 +1,173 @@
+/* ===========================================================================
+   LiquidGlass —— 四层分离样式
+   根元素 .lg 不施加 filter / backdrop-filter / opacity，内容层因此保持锐利。
+   =========================================================================== */
+
+.lg {
+  position: relative;
+  isolation: isolate;
+  border-radius: calc(var(--lg-radius, 28px) * (1 - var(--lg-merge, 0) * 0.28));
+  color: #f6f8ff;
+  /* 按压缩放 + 回弹；融合时横向轻微拉伸 */
+  transform:
+    translate3d(var(--lg-tx, 0px), var(--lg-ty, 0px), 0)
+    scale(
+      calc(var(--lg-press, 1) * (1 + var(--lg-merge, 0) * 0.035)),
+      var(--lg-press, 1)
+    );
+  transition:
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+
+/* 拖拽时去掉过渡才跟手，松手后恢复过渡 → 回弹由 cubic-bezier 给出 */
+.lg[data-dragging='true'] {
+  transition: none;
+}
+
+.lg:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 4px;
+}
+
+.lg-filter-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* 所有光学层：绝对定位、圆角继承、不吃指针事件 */
+.lg__refraction,
+.lg__frost,
+.lg__edge {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* ---------- z1 折射层：SDF + feDisplacementMap 弯折「背后的内容」 ---------- */
+.lg__refraction {
+  z-index: 1;
+  /* svg 模式下 = url(#lg-refrac-*)；fallback 模式下 = none（整层透明） */
+  backdrop-filter: var(--lg-refract, none);
+}
+
+/* ---------- z2 磨砂层：函数式 backdrop-filter，所有浏览器都有 ---------- */
+.lg__frost {
+  z-index: 2;
+  backdrop-filter: blur(var(--lg-blur, 14px)) saturate(1.6) brightness(1.06);
+  -webkit-backdrop-filter: blur(var(--lg-blur, 14px)) saturate(1.6) brightness(1.06);
+  background: linear-gradient(
+    155deg,
+    var(--lg-tint-strong, rgba(191, 228, 255, 0.16)) 0%,
+    var(--lg-tint, rgba(191, 228, 255, 0.065)) 46%,
+    rgba(255, 255, 255, 0.035) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 44px rgba(3, 7, 20, 0.34);
+}
+
+/* ---------- z3 边缘高光 + RGB 色散 + 指针跟随镜面高光 ---------- */
+.lg__edge {
+  z-index: 3;
+  /* 融合时向外扩的液滴光晕，两个玻璃靠近会连成一片 */
+  box-shadow:
+    0 0 calc(var(--lg-merge, 0) * 38px) calc(var(--lg-merge, 0) * 5px)
+    rgba(var(--lg-rgb, 191, 228, 255), 0.16);
+}
+
+.lg__disp {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.6px;
+  /* 只保留 1.6px 的边框环 */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  mix-blend-mode: screen;
+  opacity: calc(var(--lg-glow, 0.7) * 0.92);
+}
+
+.lg__disp--r {
+  background: linear-gradient(118deg, transparent 12%, rgba(255, 82, 128, 0.9) 46%, transparent 82%);
+  transform: translate(-1.7px, 0.7px);
+}
+.lg__disp--g {
+  background: linear-gradient(118deg, transparent 12%, rgba(126, 255, 206, 0.75) 46%, transparent 82%);
+  transform: translate(0, -0.5px);
+}
+.lg__disp--b {
+  background: linear-gradient(118deg, transparent 12%, rgba(104, 164, 255, 0.95) 46%, transparent 82%);
+  transform: translate(1.7px, -0.7px);
+}
+
+.lg__specular {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    230px circle at var(--lg-mx, 50%) var(--lg-my, 0%),
+    rgba(255, 255, 255, 0.62) 0%,
+    rgba(255, 255, 255, 0.18) 34%,
+    rgba(255, 255, 255, 0) 70%
+  );
+  mix-blend-mode: screen;
+  opacity: calc(var(--lg-glow, 0.7) * var(--lg-hover, 0.3) * var(--lg-spec-boost, 1));
+  transition: opacity 0.32s ease;
+}
+
+/* ---------- z4 内容层：与光学层是兄弟，绝不被滤镜影响 ---------- */
+.lg__content {
+  position: relative;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lg__content button,
+.lg__content a,
+.lg__content input {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+/* ---------- 兜底：连函数式 backdrop-filter 都没有，也必须有可见玻璃 ---------- */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .lg__frost {
+    background: rgba(28, 40, 66, 0.9);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 18px 44px rgba(3, 7, 20, 0.45);
+  }
+}
+
+/* ---------- prefers-reduced-motion 降级 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .lg,
+  .lg *,
+  .lg *::before,
+  .lg *::after {
+    transition-duration: 0.001ms !important;
+    animation: none !important;
+  }
+}
+
+.lg[data-reduced='true'],
+.lg[data-reduced='true'] *,
+.lg[data-reduced='true'] *::before,
+.lg[data-reduced='true'] *::after {
+  transition-duration: 0.001ms !important;
+  animation: none !important;
+}

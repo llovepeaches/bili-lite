@@ -1,0 +1,213 @@
+{
+  "url": "http://127.0.0.1:4173/",
+  "total": 34,
+  "passed": 34,
+  "failed": [],
+  "page_errors": [],
+  "optical": {
+    "rootClass": "lg app-dock",
+    "refBF": "url(\"#lg-refrac-r0\")",
+    "frostBF": "blur(4px) saturate(1.6) brightness(1.06)",
+    "rootFilter": "none",
+    "rootBF": "none",
+    "rootOpacity": "1",
+    "contentFilter": "none",
+    "contentBF": "none",
+    "contentOpacity": "1",
+    "z": [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "dm": {
+      "x": "R",
+      "y": "G",
+      "scale": "78"
+    },
+    "cif": "sRGB",
+    "feImage": true,
+    "feColorMatrix": true,
+    "feGaussianBlur": true,
+    "feBlend": "screen"
+  },
+  "sdf_center_pixel": [
+    128,
+    128,
+    128
+  ],
+  "scale_0_vs_140_mean_rgb_delta": 8.769,
+  "fallback_brightness_std": 21.74,
+  "checks": [
+    {
+      "name": "Chromium 走 SVG 折射路径",
+      "ok": true,
+      "detail": "url(\"#lg-refrac-r0\")"
+    },
+    {
+      "name": "feDisplacementMap 使用 R/G 通道",
+      "ok": true,
+      "detail": "{'x': 'R', 'y': 'G', 'scale': '78'}"
+    },
+    {
+      "name": "distortionScale 映射到 filter scale",
+      "ok": true,
+      "detail": "78"
+    },
+    {
+      "name": "color-interpolation-filters=sRGB",
+      "ok": true,
+      "detail": "sRGB"
+    },
+    {
+      "name": "滤镜链完整 feImage→displace→colorMatrix→blur→blend",
+      "ok": true,
+      "detail": "screen"
+    },
+    {
+      "name": "磨砂层使用函数式 backdrop-filter",
+      "ok": true,
+      "detail": "blur(4px) saturate(1.6) brightness(1.06)"
+    },
+    {
+      "name": "SDF 中央为中性 128",
+      "ok": true,
+      "detail": "[128, 128, 128]"
+    },
+    {
+      "name": "SDF 轮廓一圈有位移/高光偏差",
+      "ok": true,
+      "detail": "[233, 128, 170]"
+    },
+    {
+      "name": "R/G/B 三张通道预览均生成",
+      "ok": true,
+      "detail": "[120, 120, 120, 120]"
+    },
+    {
+      "name": "位移剖面从中心向轮廓递增",
+      "ok": true,
+      "detail": "{'center': 0, 'quarter': 58, 'edge': 112}"
+    },
+    {
+      "name": "根元素无 filter/backdrop-filter/opacity",
+      "ok": true,
+      "detail": "('none', 'none', '1')"
+    },
+    {
+      "name": "内容层无 filter/backdrop-filter/opacity",
+      "ok": true,
+      "detail": "('none', 'none', '1')"
+    },
+    {
+      "name": "四层 z-index 严格 1/2/3/4",
+      "ok": true,
+      "detail": "['1', '2', '3', '4']"
+    },
+    {
+      "name": "四个光学参数滑块齐全",
+      "ok": true,
+      "detail": "['distortionScale', 'blur', 'tint · 色相', 'glow']"
+    },
+    {
+      "name": "复制当前参数含四个 props",
+      "ok": true,
+      "detail": "distortionScale={78} / blur={4} / tint=\"#bfe4ff\" / glow={0.72}"
+    },
+    {
+      "name": "复制按钮给出成功反馈",
+      "ok": true,
+      "detail": "✓ 已复制"
+    },
+    {
+      "name": "使用示例含组件与四层结构说明",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "底栏按钮原生可点击且状态更新",
+      "ok": true,
+      "detail": "首页 → 消息"
+    },
+    {
+      "name": "底栏按钮键盘 Enter 可激活",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "指针跟随高光（写 CSS 变量，不重渲染）",
+      "ok": true,
+      "detail": "3.49% → 96.51%"
+    },
+    {
+      "name": "按压缩放 0.954 并回弹到 1",
+      "ok": true,
+      "detail": "0.954 → 1"
+    },
+    {
+      "name": "指针拖拽改变玻璃位置",
+      "ok": true,
+      "detail": "tx 0px → 70px, ty 34px"
+    },
+    {
+      "name": "多玻璃靠近时融合形变 + 高光连接带",
+      "ok": true,
+      "detail": "merge 合计 1.880, bridge 3"
+    },
+    {
+      "name": "方向键移动 / Home 复位",
+      "ok": true,
+      "detail": "70px → 82px → 0px"
+    },
+    {
+      "name": "scale 0→140 真的弯折背后内容（像素差）",
+      "ok": true,
+      "detail": "平均 RGB 差 8.77"
+    },
+    {
+      "name": "兜底路径关闭 SVG 位移滤镜",
+      "ok": true,
+      "detail": "{'dmCount': 0, 'refBF': 'none', 'frostBF': 'blur(4px) saturate(1.6) brightness(1.06)', 'mode': 'fallback'}"
+    },
+    {
+      "name": "兜底仍保留函数式 backdrop-filter",
+      "ok": true,
+      "detail": "blur(4px) saturate(1.6) brightness(1.06)"
+    },
+    {
+      "name": "兜底不出现空白玻璃",
+      "ok": true,
+      "detail": "亮度 std 21.74"
+    },
+    {
+      "name": "prefers-reduced-motion 降级生效",
+      "ok": true,
+      "detail": "{'data': 'true', 'boost': '0', 'transition': '1e-06s'}"
+    },
+    {
+      "name": "没有玻璃叠玻璃（底栏内部无嵌套 .lg）",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "列表 / 正文卡片是普通材质",
+      "ok": true,
+      "detail": "['none', 'none', 'none']"
+    },
+    {
+      "name": "调试面板不用玻璃",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "玻璃只用于底栏 + 融合实验区",
+      "ok": true,
+      "detail": "4"
+    },
+    {
+      "name": "控制台 / 页面零错误",
+      "ok": true,
+      "detail": "[]"
+    }
+  ]
+}
