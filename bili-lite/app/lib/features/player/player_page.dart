@@ -401,12 +401,6 @@ class _PlayerPageState extends State<PlayerPage> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            '应用内播放由本机 BFF 代理视频流（/api/stream）并叠加本应用解析的弹幕；'
-            '若上游因防盗链或网络原因拒绝取流，可切换到官方站点观看。',
-            style: TextStyle(fontSize: 11, color: sub, height: 1.6),
-          ),
         ],
       ),
     );

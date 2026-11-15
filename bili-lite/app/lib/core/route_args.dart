@@ -11,6 +11,7 @@ class AppRouteNames {
 
   static const String videoDetail = '/video-detail';
   static const String player = '/player';
+  static const String space = '/space';
 }
 
 /// 视频详情页参数。
@@ -28,4 +29,14 @@ class PlayerArgs {
 
   /// 分 P 序号，从 1 开始。
   final int page;
+}
+
+/// 应用内 UP 主空间参数。
+///
+/// 「查看主页」原先直接跳系统浏览器，现在改成 push 这个命名路由，在应用内
+/// 展示 UP 主资料与其稿件，不再离开 App。
+class SpaceArgs {
+  const SpaceArgs(this.owner);
+
+  final Owner owner;
 }

@@ -14,12 +14,14 @@ import '../../widgets/cover_image.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/segmented_switch.dart';
 import '../../widgets/state_views.dart';
+import '../account/login_gate.dart';
 import 'detail_controller.dart';
+import 'detail_extras.dart';
 
 /// 视频详情视图。
 ///
 /// 版式参考 MiniBili 的详情页：封面 → 「详情 / 评论」分段控件 → 内容，
-/// 内容区依次是标题、统计、UP 主卡片、四连互动栏、折叠简介与话题标签。
+/// 内容区依次是标题、BV 号、统计、UP 主卡片、四连互动栏、全文简介与话题标签。
 /// 数据与分页在 [DetailController] 里。
 class VideoDetailView extends StatefulWidget {
   const VideoDetailView({Key? key, required this.video}) : super(key: key);
@@ -174,6 +176,10 @@ class _VideoDetailViewState extends State<VideoDetailView> {
           ],
         ),
         const SizedBox(height: 10),
+        if (v.bvid.isNotEmpty) ...<Widget>[
+          BvBadge(bvid: v.bvid),
+          const SizedBox(height: 10),
+        ],
         Row(
           children: <Widget>[
             Icon(Icons.schedule_outlined, size: 13, color: sub),
@@ -200,7 +206,7 @@ class _VideoDetailViewState extends State<VideoDetailView> {
         _InteractionBar(controller: _controller, video: v),
         const SizedBox(height: 16),
 
-        // 简介（可折叠）
+        // 简介（全文，不折叠）
         if (_controller.desc.isNotEmpty) ...<Widget>[
           _DescriptionCard(controller: _controller),
           const SizedBox(height: 12),
@@ -257,12 +263,6 @@ class _VideoDetailViewState extends State<VideoDetailView> {
               )),
         ],
 
-        const SizedBox(height: 12),
-        Text(
-          '应用内通过 B 站官方外链播放器观看；点赞、投币、评论等观看侧互动'
-          '请在官方客户端完成——开放平台没有对应 scope，本应用不会用 OAuth 凭证调用写接口。',
-          style: TextStyle(fontSize: 11, color: sub, height: 1.5),
-        ),
         if (_controller.detailError != null) ...<Widget>[
           const SizedBox(height: 10),
           Text('详情补充失败：${_controller.detailError}',
@@ -279,6 +279,10 @@ class _VideoDetailViewState extends State<VideoDetailView> {
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // 播放入口只保留这一个。原先中央的 GlassCircleButton 也绑了一次
+        // openPlayer，父子手势同时命中 / 快速连点会把两个 PlayerPage 叠进
+        // 导航栈，返回一次还停在播放页，看起来就是「播放要二次打开」。
         onTap: () => openPlayer(context, v),
         child: Stack(
           fit: StackFit.expand,
@@ -298,10 +302,14 @@ class _VideoDetailViewState extends State<VideoDetailView> {
               ),
             ),
             Center(
-              child: GlassCircleButton(
-                icon: Icons.play_arrow_rounded,
-                size: 58,
-                onTap: () => openPlayer(context, v),
+              // 纯视觉：点击统一交给外层 GestureDetector，
+              // 避免同一区域注册两个互相抢手势的 onTap。
+              child: IgnorePointer(
+                child: GlassCircleButton(
+                  icon: Icons.play_arrow_rounded,
+                  size: 58,
+                  onTap: () {},
+                ),
               ),
             ),
             if (v.durationText.isNotEmpty)
@@ -370,6 +378,12 @@ class _VideoDetailViewState extends State<VideoDetailView> {
           ],
         ),
         const SizedBox(height: 8),
+        // 评论是典型的「登录后才有完整数据」能力：未登录时给出原因与入口，
+        // 已登录时这一行自动消失（原生直连请求也已带上登录 Cookie）。
+        const SizedBox(
+          width: double.infinity,
+          child: LoginRequiredHint(feature: '完整评论'),
+        ),
         if (_controller.loadingComments && _controller.comments.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 30),
@@ -411,14 +425,6 @@ class _VideoDetailViewState extends State<VideoDetailView> {
                     onTap: () => _controller.loadComments(more: true),
                   ),
           ),
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              '第三方访客身份下，B 站通常只开放部分热评。',
-              style: TextStyle(fontSize: 10.5, color: sub),
-              textAlign: TextAlign.center,
-            ),
-          ),
         ],
       ],
     );
@@ -426,10 +432,9 @@ class _VideoDetailViewState extends State<VideoDetailView> {
 
   // ─────────────────────────── 跳转 ───────────────────────────
 
-  /// 打开 UP 主空间。
+  /// 在应用内打开 UP 主空间，不再跳系统浏览器。
   Future<void> _openSpace(Owner owner) async {
-    if (owner.mid.isEmpty) return;
-    await openExternal(context, 'https://space.bilibili.com/${owner.mid}');
+    await openSpace(context, owner);
   }
 }
 
@@ -649,7 +654,11 @@ class _InteractionBar extends StatelessWidget {
               icon: Icons.share_outlined,
               label: '分享',
               value: video.stat.share,
-              onTap: () => _openOfficial(context),
+              onTap: () => showVideoShareSheet(
+                context,
+                video: video,
+                onOpenExternal: (String url) => openExternal(context, url),
+              ),
             ),
             const Spacer(),
             GlassChip(
@@ -724,7 +733,7 @@ class _InteractionItem extends StatelessWidget {
   }
 }
 
-/// 折叠的简介卡片。
+/// 简介卡片：全文展示，不再折叠、不再显示展开按钮。
 class _DescriptionCard extends StatelessWidget {
   const _DescriptionCard({required this.controller});
 
@@ -732,36 +741,19 @@ class _DescriptionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sub = context.subTextColor;
-    final expanded = controller.descExpanded;
     return GlassPanel(
       radius: AppRadius.control + 2,
       padding: const EdgeInsets.all(14),
-      onTap: controller.toggleDesc,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              const Text('简介',
-                  style:
-                      TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              const Spacer(),
-              Icon(
-                expanded
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-                size: 20,
-                color: sub,
-              ),
-            ],
-          ),
+          const Text('简介',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           Text(
             controller.desc,
-            maxLines: expanded ? 100 : 4,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 13, height: 1.6, color: sub),
+            style: TextStyle(
+                fontSize: 13, height: 1.6, color: context.subTextColor),
           ),
         ],
       ),

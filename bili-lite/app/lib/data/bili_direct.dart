@@ -51,6 +51,17 @@ class BiliDirect {
   String _identity = '内置访客身份';
   bool _identityTried = false;
 
+  /// 用户在应用内登录后的 B 站 Web Cookie（SESSDATA / bili_jct / DedeUserID …）。
+  ///
+  /// 「有些内容要登录才能使用」的根因是匿名请求被上游按访客身份限流：
+  /// 评论只放热评、弹幕与播放地址拿不到高码率、UP 主空间直接 -403。
+  /// 登录后由 `QrSession` 把同一份 Cookie 注入这里，原生端的直连请求
+  /// （评论 / 弹幕 / 播放地址）就会真正带上登录态，而不是只改界面文案。
+  ///
+  /// 只放在内存里，不额外持久化；退出登录时清空。Web 端仍走 BFF 同源代理，
+  /// 不会把登录 Cookie 拼进 URL 或写进服务端日志。
+  static String userCookie = '';
+
   int get cacheEntries => _cache.length;
   String get identity => _identity;
 
@@ -104,7 +115,9 @@ class BiliDirect {
         'User-Agent': _userAgent,
         'Referer': 'https://www.bilibili.com/',
         'Accept': 'application/json, text/plain, */*',
-        'Cookie': cookie,
+        // 已登录时优先用登录凭证；登录 Cookie 里已含 SESSDATA 等完整字段，
+        // 不再拼访客 buvid，避免上游把请求判成半匿名状态。
+        'Cookie': userCookie.isNotEmpty ? userCookie : cookie,
       };
 
   /// 统一请求出口：必须是 200 + UTF-8 JSON + code === 0，风控 HTML 一律当错误。

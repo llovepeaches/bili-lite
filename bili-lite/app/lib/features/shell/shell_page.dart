@@ -15,6 +15,8 @@ import '../settings/settings_view.dart';
 
 /// 导航壳：窄屏悬浮玻璃 dock，宽屏悬浮玻璃侧栏，页面用 IndexedStack 保活。
 ///
+/// 除了点 dock / 侧栏，也支持在内容区左右滑动切换入口（[#_swipeable]）。
+///
 /// 导航项不再写死：来自 `AppPrefs.sections`，用户可以在设置里增删与排序
 /// （参考 PiliPlus 的 `NavBarConfig`）。这里用 [AppSection] 而不是下标来
 /// 记录当前选中项 —— 顺序变了之后按下标记忆会选错页面。
@@ -42,6 +44,28 @@ class _ShellPageState extends State<ShellPage> {
       _current = section;
       _dockVisible = true;
     });
+  }
+
+  /// 左右滑动切换导航入口。
+  ///
+  /// 内容容器仍是 IndexedStack（滚动位置、搜索输入、列表状态全部保活），
+  /// 手势只负责改选中项，因此不会像直接换成 PageView 那样在滑出视口时
+  /// 销毁并重建子页面。用 deferToChild 把点击 / 垂直滚动优先留给子页面，
+  /// 只有明确的水平快速滑动才切页，避免抢卡片横滑与 Slider 的手势。
+  Widget _swipeable(List<AppSection> sections, Widget child) {
+    return GestureDetector(
+      behavior: HitTestBehavior.deferToChild,
+      onHorizontalDragEnd: (DragEndDetails details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity.abs() < 260) return;
+        final current = _indexOf(sections, _active);
+        // 左滑（负速度）看下一个入口，右滑回上一个。
+        final next = velocity < 0 ? current + 1 : current - 1;
+        if (next < 0 || next >= sections.length) return;
+        _select(sections[next]);
+      },
+      child: child,
+    );
   }
 
   /// 滚动方向驱动 dock 显隐。借鉴 PiliPlus 的 hideBottomBar：
@@ -88,12 +112,15 @@ class _ShellPageState extends State<ShellPage> {
                 onWillPop: _handleWillPop,
                 child: Scaffold(
                   extendBody: true,
-                  body: NotificationListener<UserScrollNotification>(
-                    onNotification: _onScroll,
-                    child: IndexedStack(
-                      key: stackKey,
-                      index: _indexOf(sections, _active),
-                      children: _pagesFor(sections),
+                  body: _swipeable(
+                    sections,
+                    NotificationListener<UserScrollNotification>(
+                      onNotification: _onScroll,
+                      child: IndexedStack(
+                        key: stackKey,
+                        index: _indexOf(sections, _active),
+                        children: _pagesFor(sections),
+                      ),
                     ),
                   ),
                   bottomNavigationBar: SafeArea(
@@ -133,10 +160,13 @@ class _ShellPageState extends State<ShellPage> {
                     onSelect: _select,
                   ),
                   Expanded(
-                    child: IndexedStack(
-                      key: stackKey,
-                      index: _indexOf(sections, _active),
-                      children: _pagesFor(sections),
+                    child: _swipeable(
+                      sections,
+                      IndexedStack(
+                        key: stackKey,
+                        index: _indexOf(sections, _active),
+                        children: _pagesFor(sections),
+                      ),
                     ),
                   ),
                 ],

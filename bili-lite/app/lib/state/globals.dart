@@ -13,7 +13,7 @@ final AppState appState = AppState(repository: repo);
 final LibraryState library = LibraryState();
 final AuthSession authSession = AuthSession();
 final SearchHistory searchHistory = SearchHistory();
-/// 扫码登录态（主通道，不依赖任何服务端）。
+/// B 站 Web 登录态（主通道，扫码 / 密码 / 短信 / Cookie 共用一份 Cookie）。
 final QrSession qrSession = QrSession();
 
 /// 用户偏好：导航项顺序、卡片样式、滚动隐藏 dock。

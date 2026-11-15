@@ -27,7 +27,6 @@ class DetailController extends ChangeNotifier {
 
   bool _loadingComments = false;
   bool _loadingMore = false;
-  bool _descExpanded = false;
 
   String? _detailError;
   String? _commentError;
@@ -48,8 +47,6 @@ class DetailController extends ChangeNotifier {
   bool get loadingComments => _loadingComments;
 
   bool get loadingMore => _loadingMore;
-
-  bool get descExpanded => _descExpanded;
 
   String? get detailError => _detailError;
 
@@ -117,11 +114,6 @@ class DetailController extends ChangeNotifier {
     if (_sort == sort) return;
     _sort = sort;
     await loadComments(refresh: true);
-  }
-
-  void toggleDesc() {
-    _descExpanded = !_descExpanded;
-    _notify();
   }
 
   void _notify() {

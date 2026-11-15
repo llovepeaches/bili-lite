@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/route_args.dart';
 import '../features/detail/detail_view.dart';
 import '../features/player/player_page.dart';
+import '../features/space/space_view.dart';
 
 /// 集中路由表。
 ///
@@ -31,6 +32,12 @@ class AppRouter {
         final args = settings.arguments;
         if (args is PlayerArgs) {
           return _route(PlayerPage(video: args.video, page: args.page), settings);
+        }
+        return null;
+      case AppRouteNames.space:
+        final args = settings.arguments;
+        if (args is SpaceArgs) {
+          return _route(SpaceView(owner: args.owner), settings);
         }
         return null;
       default:
