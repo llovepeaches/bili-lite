@@ -11,6 +11,9 @@ class GlassConfig {
     required this.motion,
     required this.blur,
     this.tinted = false,
+    this.navBlur = 0,
+    this.lens = 1.0,
+    this.surface = 0.0,
   });
 
   /// 总开关：关闭后所有玻璃组件退化为原来的不透明卡片，Aurora 背景消失。
@@ -24,6 +27,27 @@ class GlassConfig {
 
   /// 真实背景模糊 sigma。Web 的 html renderer 下置 0，靠渐变与高光模拟折射。
   final double blur;
+
+  /// 导航级玻璃（底栏 / 顶栏 / 侧栏）的真实背景采样模糊 sigma。
+  ///
+  /// 与 [blur] 分开是因为二者的性能画像完全不同：
+  /// * [blur] 作用在卡片上，一个页面可能有几十张，全开会明显掉帧；
+  /// * [navBlur] 只作用在底栏、顶栏、侧栏这几件**大面积**玻璃上，
+  ///   件数少、面积大，采样收益最高。
+  ///
+  /// Web 的 html renderer 其实**支持** `BackdropFilter`（引擎把它落成
+  /// CSS `backdrop-filter: blur()`），所以这一项在 Web 上也开。
+  final double navBlur;
+
+  /// 透镜折射倍率：把采样到的背景放大多少倍。
+  /// 1.0 表示不折射；> 1 表示背景被透镜顶大（凸透镜效果）。
+  /// 仅原生端生效 —— Web 的 html renderer 只认 blur 类滤镜，
+  /// 混入 matrix 会让滤镜被整个丢弃、玻璃退化成黑纱。
+  final double lens;
+
+  /// 玻璃表面的白色覆盖层不透明度（Compose Glass 里 `onDrawSurface` 的
+  /// `Color.White.copy(alpha = 0.5f)`）。0 表示不铺这层。
+  final double surface;
 
   /// iOS 26.1 的「通透 Clear / 着色 Tinted」材质。
   /// 通透档内部几乎全透，仅靠沿边缘的折射高光定义形状；
@@ -45,10 +69,22 @@ class GlassConfig {
           other.strength == strength &&
           other.motion == motion &&
           other.blur == blur &&
+          other.navBlur == navBlur &&
+          other.lens == lens &&
+          other.surface == surface &&
           other.tinted == tinted;
 
   @override
-  int get hashCode => Object.hash(enabled, strength, motion, blur, tinted);
+  int get hashCode => Object.hash(
+        enabled,
+        strength,
+        motion,
+        blur,
+        navBlur,
+        lens,
+        surface,
+        tinted,
+      );
 }
 
 /// 把配置注入 widget 树；任意后代用 GlassTheme.of(context) 建立依赖。

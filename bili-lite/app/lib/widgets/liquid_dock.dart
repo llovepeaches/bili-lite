@@ -8,6 +8,7 @@ import '../core/glass_theme.dart';
 import '../core/nav_section.dart';
 import '../core/theme.dart';
 import '../core/tokens.dart';
+import 'glass_sample.dart';
 
 /// iOS 26 风格的液态玻璃底栏。
 ///
@@ -159,11 +160,20 @@ class LiquidGlassDock extends StatelessWidget {
   }
 }
 
-/// 玻璃外壳：填充 + 描边 + 阴影 + 可选的流动高光。
+/// 玻璃外壳：真实背景采样 + 透镜折射 + 表面层 + 描边 + 阴影 + 流动高光。
 ///
 /// 胶囊和独立按钮共用它，只是圆角不同（胶囊是长条、按钮是整圆）。
 /// 每一件玻璃各自带一层 `BackdropFilter` —— 两件玻璃是分开的实体，
 /// 背景模糊也应该各自贴着自己的轮廓，而不是糊成一整块。
+///
+/// 光学结构对齐 Compose Glass 的写法：
+/// 1. **采样**：滤镜的输入是这块玻璃背后**真实绘制过的内容**，
+///    而不是我们自己画的渐变；
+/// 2. **模糊**：`ImageFilter.blur` 把采样结果揉开；
+/// 3. **透镜**：`ImageFilter.matrix` 把采样结果放大，等效一块凸透镜
+///    把底下的内容顶大（原生端才有，Web 的 html renderer 只认 blur）；
+/// 4. **表面层**：折射之上铺一层半透明白，等效 Compose 的
+///    `onDrawSurface = { drawRect(Color.White.copy(alpha = 0.5f)) }`。
 class _GlassShell extends StatelessWidget {
   const _GlassShell({
     required this.child,
@@ -188,7 +198,11 @@ class _GlassShell extends StatelessWidget {
     final dark = p.dark;
     final borderRadius = BorderRadius.circular(radius);
 
-    Widget body = Container(
+    // 有真实采样时，玻璃自身只留很薄的一层染色，让被模糊的背景透出来；
+    // 没有采样能力时（Web html renderer）才用厚渐变自己糊一层。
+    final bool sampled = config.enabled && config.navBlur > 0;
+
+    final Widget tint = DecoratedBox(
       decoration: BoxDecoration(
         shape: shape,
         borderRadius: shape == BoxShape.circle ? null : borderRadius,
@@ -198,16 +212,23 @@ class _GlassShell extends StatelessWidget {
           end: Alignment.bottomCenter,
           colors: dark
               ? <Color>[
-                  Colors.white.withOpacity(0.13),
-                  Colors.white.withOpacity(0.05),
-                  Colors.white.withOpacity(0.08),
+                  Colors.white.withOpacity(sampled ? 0.10 : 0.13),
+                  Colors.white.withOpacity(sampled ? 0.04 : 0.05),
+                  Colors.white.withOpacity(sampled ? 0.07 : 0.08),
                 ]
               : <Color>[
-                  Colors.white.withOpacity(0.72),
-                  Colors.white.withOpacity(0.44),
-                  Colors.white.withOpacity(0.58),
+                  Colors.white.withOpacity(sampled ? 0.34 : 0.72),
+                  Colors.white.withOpacity(sampled ? 0.16 : 0.44),
+                  Colors.white.withOpacity(sampled ? 0.26 : 0.58),
                 ],
         ),
+      ),
+    );
+
+    Widget body = Container(
+      decoration: BoxDecoration(
+        shape: shape,
+        borderRadius: shape == BoxShape.circle ? null : borderRadius,
         border: Border.all(
           color: dark
               ? Colors.white.withOpacity(0.30)
@@ -234,6 +255,16 @@ class _GlassShell extends StatelessWidget {
         borderRadius: borderRadius,
         child: Stack(
           children: <Widget>[
+            Positioned.fill(child: tint),
+            // 白色表面层：铺在折射结果之上，等效 Compose 的 onDrawSurface。
+            if (config.surface > 0)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ColoredBox(
+                    color: Colors.white.withOpacity(config.surface),
+                  ),
+                ),
+              ),
             if (flow != null) Positioned.fill(child: flow!),
             Padding(padding: padding, child: child),
           ],
@@ -241,16 +272,22 @@ class _GlassShell extends StatelessWidget {
       ),
     );
 
-    // 真实背景模糊：原生端开启，Web 的 html renderer 没有采样器，
-    // 退化为渐变 + 高光模拟（配置里 blur 已经按平台区分）。
-    if (config.enabled && config.blur > 0) {
+    // 真实背景采样 + 模糊 + 透镜折射。
+    //
+    // 滤镜链放在 ClipRRect **里面**：这样模糊与折射的结果被裁进玻璃的
+    // 轮廓，圆角之外不会漏出被拉大的背景。
+    //
+    // 透镜支点用**玻璃局部坐标**的中心 —— 这要求滤镜所处的坐标空间
+    // 就是玻璃自己的局部空间。实测（Flutter 3.0 / Skia）：matrix 的
+    // src/dest 都在「离滤镜最近的那层 RepaintBoundary 的局部空间」里，
+    // 所以这里给玻璃套一层 RepaintBoundary，滤镜空间随即等于玻璃局部
+    // 空间，支点直接取 size.center(Offset.zero) 即可。
+    if (sampled) {
       body = ClipRRect(
         borderRadius: borderRadius,
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(
-            sigmaX: config.blur,
-            sigmaY: config.blur,
-          ),
+        child: GlassSample(
+          sigma: config.navBlur,
+          lens: config.lens,
           child: body,
         ),
       );

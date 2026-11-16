@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/glass_theme.dart';
 import '../../core/nav_section.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
@@ -259,6 +260,10 @@ class _GlassSidebar extends StatelessWidget {
         child: GlassPanel(
           radius: 26,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+          // 侧栏是大面积导航玻璃：走导航级采样，与底栏同一套光学参数。
+          blur: GlassTheme.of(context).navBlur > 0
+              ? GlassTheme.of(context).navBlur
+              : null,
           // 导航层是 iOS 里最"活"的玻璃：订阅共享镜面时钟，亮斑沿轮廓流动。
           specular: true,
           child: Column(

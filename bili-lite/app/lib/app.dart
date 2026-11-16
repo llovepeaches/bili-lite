@@ -64,11 +64,26 @@ class _BiliLiteAppState extends State<BiliLiteApp>
           strength: appState.glassStrength,
           motion: appState.glassMotion,
           tinted: appState.glassTinted,
-          // Web 的 html renderer 关掉真实背景模糊，用渐变与镜面高光模拟折射；
-          // 原生端开启真实 blur。
+          // 卡片级模糊：Web 的 html renderer 下关掉 —— 一页几十张卡片，
+          // 每张都做一次 backdrop 采样会明显掉帧。
           blur: appState.glassEnabled && !kIsWeb
               ? 16.0 * appState.glassStrength
               : 0.0,
+          // 导航级模糊：底栏 / 顶栏 / 侧栏只有几件大面积玻璃，采样收益最高。
+          //
+          // Web 的 html renderer **支持** BackdropFilter —— 引擎把它落成
+          // CSS `backdrop-filter: blur()`（实测 DOM 里确实生成了
+          // `flt-backdrop-filter` 且带 backdrop-filter 样式），所以两端都能开。
+          navBlur: appState.glassEnabled
+              ? 18.0 * appState.glassStrength
+              : 0.0,
+          // 透镜折射：只有原生端（Skia）能真正把背景采样放大。
+          // Web 的 html renderer 只认 blur 类滤镜，混入 matrix 会让滤镜
+          // 被丢弃、玻璃退化成一层黑纱，所以那边给 1.0（不折射）。
+          lens: appState.glassEnabled && !kIsWeb ? 1.06 : 1.0,
+          // 玻璃表面的白色覆盖层，对应 Compose Glass 的
+          // `onDrawSurface = { drawRect(Color.White.copy(alpha = 0.5f)) }`。
+          surface: appState.glassEnabled ? 0.16 * appState.glassStrength : 0.0,
         );
         _sync(config.enabled && config.motion);
 

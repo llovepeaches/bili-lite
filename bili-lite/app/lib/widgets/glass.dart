@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../core/glass_theme.dart';
 import '../core/theme.dart';
+import 'glass_sample.dart';
 
 /// 动态极光背景：漂移的彩色光晕 + 斜向色带 + 掠光。
 ///
@@ -504,12 +505,13 @@ class GlassPanel extends StatelessWidget {
                 )),
     );
 
+    // 卡片级玻璃只做纯模糊；导航级（显式传 blur）才叠加透镜折射 ——
+    // 一次透镜放大意味着整个背景被重新映射，几十张卡片都做太贵。
     final sigma = blur ?? config.blur;
     if (sigma > 0) {
-      content = BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: content,
-      );
+      content = blur != null
+          ? GlassSample(sigma: sigma, lens: config.lens, child: content)
+          : GlassBlur(sigma: sigma, child: content);
     }
 
     return Container(
@@ -587,12 +589,11 @@ class GlassBar extends StatelessWidget {
       child: paintLayer,
     );
 
-    if (config.blur > 0) {
+    // 顶栏是大面积玻璃：走导航级采样（Web 上也开）。
+    final double sigma = config.navBlur > 0 ? config.navBlur : config.blur;
+    if (sigma > 0) {
       content = ClipRect(
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: config.blur, sigmaY: config.blur),
-          child: content,
-        ),
+        child: GlassSample(sigma: sigma, lens: config.lens, child: content),
       );
     }
     return content;
