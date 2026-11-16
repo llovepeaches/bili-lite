@@ -84,6 +84,15 @@ class _BiliLiteAppState extends State<BiliLiteApp>
           // 玻璃表面的白色覆盖层，对应 Compose Glass 的
           // `onDrawSurface = { drawRect(Color.White.copy(alpha = 0.5f)) }`。
           surface: appState.glassEnabled ? 0.16 * appState.glassStrength : 0.0,
+          // 玻璃的色相染色：对应 Compose 参考实现里
+          // `drawRect(tint, blendMode = BlendMode.Hue)` 那一层。
+          // 底栏是「透镜 + 染色」的组合，所以这里给一个冷蓝 ——
+          // 跟应用主色的粉形成冷暖对比，玻璃因此更像一块有色的实体。
+          hue: appState.glassEnabled ? const Color(0xFF0088FF) : null,
+          hueAlpha: appState.glassEnabled ? 0.06 * appState.glassStrength : 0.0,
+          // Hue 混合层自身也要半透明 —— 不透明的话色相被整体替换，
+          // 玻璃会退化成一整块不透明的蓝色板，背景一点也透不出来。
+          hueMix: appState.glassEnabled ? 0.22 * appState.glassStrength : 0.0,
         );
         _sync(config.enabled && config.motion);
 

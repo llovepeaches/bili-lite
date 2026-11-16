@@ -14,6 +14,9 @@ class GlassConfig {
     this.navBlur = 0,
     this.lens = 1.0,
     this.surface = 0.0,
+    this.hue,
+    this.hueAlpha = 0.0,
+    this.hueMix = 0.0,
   });
 
   /// 总开关：关闭后所有玻璃组件退化为原来的不透明卡片，Aurora 背景消失。
@@ -49,6 +52,28 @@ class GlassConfig {
   /// `Color.White.copy(alpha = 0.5f)`）。0 表示不铺这层。
   final double surface;
 
+  /// 玻璃的色相染色目标色（Compose 里 `drawRect(tint, BlendMode.Hue)`
+  /// 的那个 `tint`，参考实现用的是 `0xFF0088FF`）。null 表示不染色。
+  ///
+  /// `BlendMode.hue` 取**源**的色相、**目标**的饱和度与明度，
+  /// 所以这一层不会把玻璃染成一块死板的色板 —— 背景的明暗层次还在，
+  /// 只是整体偏到了这个色相上。
+  final Color? hue;
+
+  /// 色相染色之后额外叠加的染色层不透明度
+  /// （Compose 里 `drawRect(tint.copy(alpha = 0.75f))` 那一层）。
+  final double hueAlpha;
+
+  /// `BlendMode.hue` 那一层自身的**混合强度**。
+  ///
+  /// Compose 里 `drawRect(tint, blendMode = BlendMode.Hue)` 用的是不透明
+  /// 色，实测在 Flutter 里会让整块玻璃彻底变成一块不透明色板 ——
+  /// 色相被整体替换、背景一点也透不出来，那已经不是玻璃了。
+  ///
+  /// 所以这里把染色源本身降为半透明：Hue 混合只**部分**接管色相，
+  /// 背景的明暗层次与通透感得以保留。
+  final double hueMix;
+
   /// iOS 26.1 的「通透 Clear / 着色 Tinted」材质。
   /// 通透档内部几乎全透，仅靠沿边缘的折射高光定义形状；
   /// 着色档抬高材质不透明度，换取更强的文字可读性。
@@ -72,6 +97,9 @@ class GlassConfig {
           other.navBlur == navBlur &&
           other.lens == lens &&
           other.surface == surface &&
+          other.hue == hue &&
+          other.hueAlpha == hueAlpha &&
+          other.hueMix == hueMix &&
           other.tinted == tinted;
 
   @override
@@ -83,6 +111,9 @@ class GlassConfig {
         navBlur,
         lens,
         surface,
+        hue,
+        hueAlpha,
+        hueMix,
         tinted,
       );
 }

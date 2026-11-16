@@ -43,6 +43,10 @@ class GlassSample extends StatelessWidget {
     // 滤镜被丢弃、玻璃退化成一层黑纱。所以 Web 端走标准 `BackdropFilter`
     // （引擎会把它落成 DOM 的 `flt-backdrop-filter`），不做透镜折射。
     if (!GlassOptics.supportsLens) {
+      // 共享 backdrop 已经在外层做过模糊，内层只留透镜 ——
+      // 那 Web 端这一层什么也不做，直接省掉（CSS 的 backdrop-filter
+      // 嵌套没有意义，还会多一层合成开销）。
+      if (sigma <= 0.05) return child;
       return BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: child,

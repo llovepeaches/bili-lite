@@ -233,6 +233,9 @@ B 站账号登录**主通道是官方 Web 扫码登录**（B 站 App 扫码确�
 | **真实背景采样** | 导航级玻璃（底栏 / 顶栏 / 侧栏）真的去采样背后已绘制的内容并做模糊，而不是自己画渐变假装玻璃 | `RenderLensBackdrop` / `GlassSample` |
 | **透镜折射** | 采样结果再经仿射矩阵放大，等效凸透镜把底下的内容顶大；支点取玻璃中心并换算到滤镜坐标空间 | `GlassOptics.magnify` |
 | **表面层** | 折射结果之上铺一层半透明白，模拟厚玻璃的漫反射表面 | `GlassConfig.surface` |
+| **共享 backdrop** | 底栏的胶囊与圆形按钮引用**同一份**背景采样（一次 `BackdropFilter` + 并集裁剪 + 各自透镜），因此两件玻璃看到的画面完全一致、不会互相采样 | `liquid_dock.dart` → `_GlassDock` |
+| **色相染色** | 玻璃表面叠一层 `BlendMode.hue` 的冷蓝染色（半透明源），让材质像一块有色的实体而不是无色玻璃 | `GlassConfig.hue / hueMix / hueAlpha` |
+| **弹簧按压** | 圆形玻璃按下时用 `spring(ratio 0.5 / stiffness 300)` 放大自身形状（不是只放大图标），松手过冲回弹 —— 液态手感最容易被感知到的一环 | `GlassPress` |
 | 胶囊控件语言 | 芯片、徽章、时长角标、Tab 指示器、选中项统一为全圆角胶囊；封面与容器同心圆角 | `GlassPill` / `GlassChip` / `shell_page.dart` |
 | 内容让位 | 卡片内部填充压到极薄，标题、UP 主、统计数据直接压在透镜上，并加轻微文字阴影保证可读性 | `widgets/video_card.dart` |
 
@@ -244,6 +247,8 @@ B 站账号登录**主通道是官方 Web 扫码登录**（B 站 App 扫码确�
 | **着色 Tinted** | 抬高材质不透明度，形状更实、文字对比度更高，但仍保留边缘高光 | 强光环境、可读性优先时 |
 
 **可调**：设置 →「液态玻璃」可一键关闭材质、切换**轻微 / 标准 / 浓郁**三档浓度、切换 Clear / Tinted、开关动态光晕，全部持久化在 `SharedPreferences`。关闭后所有组件退回不透明卡片与纯色背景，低配设备也能流畅用。
+
+**共享 backdrop 的实测依据**（原生 Linux + Xvfb 读截图像素）：两块**重叠**的兄弟玻璃会互相采样 —— 上层实测读到下层的纯红 `(255,0,0)`；嵌套 `BackdropFilter` 的内层采样的是**外层的输出**（条纹周期正好翻倍）；而嵌套下内层透镜的 src/dest 仍在**根空间**（实测暗段中心 420，与理论值 `2×460−500` 精确吻合）。所以底栏采用「一次采样 + 并集裁剪 + 各自透镜」的结构。
 
 **平台差异**：**两端都开**真实 `BackdropFilter` 背景采样 —— 底栏、顶栏、侧栏这三件大面积玻璃走「导航级」模糊（`navBlur`），卡片级模糊（`blur`）只在原生端开（Web 上一页几十张卡片同时做 backdrop 采样会明显掉帧）。
 Web 的 html renderer 其实**支持** `BackdropFilter`：引擎把它落成 CSS `backdrop-filter: blur(Npx)`（实测 DOM 里确实生成了 `flt-backdrop-filter` 且带 backdrop-filter 样式），但 CSS 只认 blur —— 滤镜链里一旦混入 matrix/compose，整个滤镜会被丢弃、玻璃退化成一层黑纱。所以**真·透镜折射（把背景顶大）只在原生端生效**，Web 端退化为纯 blur + 手绘折射环。
@@ -468,7 +473,7 @@ cd app && NODE_PATH=$(npm root -g) node tool/verify_oauth_web.cjs   # Web 端到
 
 ## 重构记录
 
-本工程完成过五轮重构 / 改造：
+本工程完成过五轮重构 / 改造（另有多轮视觉与光学专项改造，详见 [docs/重构说明.md](docs/重构说明.md)）：
 
 1. **第一轮 · 全项目收敛** —— 统一存储门面、设计令牌收敛、分区表去重、重复组件抽取、
    跨端明文流量策略收紧、深色模式对比度修复、分页与生命周期缺陷修复等。
@@ -500,6 +505,7 @@ cd app && NODE_PATH=$(npm root -g) node tool/verify_oauth_web.cjs   # Web 端到
 - **工具链**：本工程在 Flutter 3.0 / Dart 2.17 上验证通过，运行时依赖刻意压到 5 个（`qr_flutter 4.0.0` 是最后一个兼容 Dart 2.17 的二维码库版本），较新 SDK 同样可用。
 - **Web 玻璃模糊**：html renderer **支持** `BackdropFilter`（引擎落成 CSS `backdrop-filter: blur()`），所以底栏 / 顶栏 / 侧栏两端都开真实背景采样；卡片级模糊只在原生端开。CSS 只认 blur，**真·透镜折射（把背景顶大）只在原生端生效** —— Web 端滤镜链里混入 matrix 会被整体丢弃、玻璃退化成黑纱。光学层与内容合并为单一渲染对象，避免 html renderer 的负 z-index canvas 盖住文字。若改用 `flutter build web --web-renderer canvaskit`，需自行评估首包体积与字体加载。
 - **玻璃不能自带 `RepaintBoundary`**：Flutter 会为该子树建立独立渲染表面，backdrop 采样只能看到同一 surface 内的内容 —— 给玻璃套一层等于把背景全隔离掉，玻璃会退化成一块不透明浅色板（原生实测：同一画面左右对照，套 boundary 的一侧完全看不到背后的黑条）。透镜支点因此不能靠「套 boundary 换坐标系」解决，改为在 paint 阶段用 `getTransformTo(最近一层 RepaintBoundary 祖先)` 把玻璃中心换算到滤镜坐标空间（`RenderLensBackdrop`）。
+- **色相染色不能用不透明源**：`BlendMode.hue` 取源的色相、目标的饱和度与明度。若照 Compose 参考直接用不透明色做 Hue 源，色相会被**整体**接管，玻璃退化成一块不透明蓝色板、背景一点也透不出来（原生截图已确认）。因此染色源本身降为半透明（`hueMix = 0.22 × 强度`），只部分接管色相，背景明暗层次得以保留。
 - **着色 Tinted 档偏保守**：为保证文字可读性抬高了不透明度，观感比通透 Clear 更接近实色卡片；想看最典型的 iOS 26 透镜效果请用默认的通透档。
 
 ---

@@ -154,4 +154,45 @@ void main() {
       expect(GlassConfig.fallback.surface, 0.0);
     });
   });
+
+  group('色相染色', () {
+    test('hue / hueAlpha / hueMix 参与相等性与 hashCode', () {
+      const a = GlassConfig(
+        enabled: true,
+        strength: 0.75,
+        motion: false,
+        blur: 0,
+        hue: Color(0xFF0088FF),
+        hueAlpha: 0.06,
+        hueMix: 0.22,
+      );
+      const b = GlassConfig(
+        enabled: true,
+        strength: 0.75,
+        motion: false,
+        blur: 0,
+        hue: Color(0xFF0088FF),
+        hueAlpha: 0.06,
+        hueMix: 0.22,
+      );
+      const c = GlassConfig(
+        enabled: true,
+        strength: 0.75,
+        motion: false,
+        blur: 0,
+        hue: Color(0xFF0088FF),
+        hueAlpha: 0.06,
+        hueMix: 0.40,
+      );
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(c));
+    });
+
+    test('fallback 不染色', () {
+      expect(GlassConfig.fallback.hue, isNull);
+      expect(GlassConfig.fallback.hueAlpha, 0.0);
+      expect(GlassConfig.fallback.hueMix, 0.0);
+    });
+  });
 }
