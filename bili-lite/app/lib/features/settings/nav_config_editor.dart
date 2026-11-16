@@ -13,6 +13,10 @@ import '../../widgets/glass.dart';
 ///
 /// 这也是「导航项被硬编码在 shell_page.dart」这个问题的正解 ——
 /// 改动入口集合不需要再动壳层代码。
+///
+/// 底栏是**双件式**结构，所以这里也分成两组展示：
+/// - **标签组**：挤在左侧胶囊里的那几项，可自由排序；
+/// - **独立入口**：底栏右侧那枚独立圆形按钮（搜索），不参与标签组排序。
 class NavConfigEditor extends StatelessWidget {
   const NavConfigEditor({Key? key}) : super(key: key);
 
@@ -22,22 +26,48 @@ class NavConfigEditor extends StatelessWidget {
     return AnimatedBuilder(
       animation: prefs,
       builder: (context, _) {
-        final visible = prefs.sections;
+        final tabs = prefs.tabSections;
+        final standalone = prefs.standaloneSections;
         final hidden = AppSection.values
-            .where((s) => !visible.contains(s))
+            .where((s) => !prefs.sections.contains(s))
             .toList();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            for (var i = 0; i < visible.length; i++)
+            Text('标签组（底栏胶囊内）',
+                style: TextStyle(
+                    fontSize: 11.5,
+                    color: sub,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            for (var i = 0; i < tabs.length; i++)
               _NavRow(
-                section: visible[i],
+                section: tabs[i],
                 index: i,
-                total: visible.length,
+                total: tabs.length,
+                // 独立入口不参与标签组排序，所以标签组永远排不到它前面。
+                sortable: true,
               ),
+            if (standalone.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 12),
+              Text('独立入口（底栏右侧）',
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      color: sub,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              for (var i = 0; i < standalone.length; i++)
+                _NavRow(
+                  section: standalone[i],
+                  index: i,
+                  total: standalone.length,
+                  // 独立入口固定在最右，不提供排序。
+                  sortable: false,
+                ),
+            ],
             if (hidden.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               Text('未显示的入口', style: TextStyle(fontSize: 11.5, color: sub)),
               const SizedBox(height: 6),
               Wrap(
@@ -66,11 +96,15 @@ class _NavRow extends StatelessWidget {
     required this.section,
     required this.index,
     required this.total,
+    required this.sortable,
   });
 
   final AppSection section;
   final int index;
   final int total;
+
+  /// 是否可排序（独立入口固定在最右，不可排序）。
+  final bool sortable;
 
   @override
   Widget build(BuildContext context) {
@@ -86,18 +120,20 @@ class _NavRow extends StatelessWidget {
                 style: const TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w600)),
           ),
-          _IconAction(
-            icon: Icons.keyboard_arrow_up_rounded,
-            tooltip: '上移',
-            enabled: index > 0,
-            onTap: () => prefs.moveSection(section, -1),
-          ),
-          _IconAction(
-            icon: Icons.keyboard_arrow_down_rounded,
-            tooltip: '下移',
-            enabled: index < total - 1,
-            onTap: () => prefs.moveSection(section, 1),
-          ),
+          if (sortable) ...<Widget>[
+            _IconAction(
+              icon: Icons.keyboard_arrow_up_rounded,
+              tooltip: '上移',
+              enabled: index > 0,
+              onTap: () => prefs.moveSection(section, -1),
+            ),
+            _IconAction(
+              icon: Icons.keyboard_arrow_down_rounded,
+              tooltip: '下移',
+              enabled: index < total - 1,
+              onTap: () => prefs.moveSection(section, 1),
+            ),
+          ],
           _IconAction(
             icon: Icons.visibility_outlined,
             tooltip: '隐藏',

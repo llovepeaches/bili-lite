@@ -37,17 +37,25 @@ class _ShellPageState extends State<ShellPage> {
   /// 这样「高光跟手移动」和「真正切到了哪一页」是两件事。
   int? _previewIndex;
 
-  List<AppSection> get _sections => prefs.sections;
+  /// 视觉顺序：标签组在前，**独立入口固定在最右**。
+  ///
+  /// 底栏是双件式结构（胶囊 + 右侧独立圆形按钮），滑动的页序必须
+  /// 跟视觉顺序一致 —— 搜索在屏幕最右，往左滑才会从「设置」进到「搜索」。
+  List<AppSection> get _sections => <AppSection>[
+        ...prefs.tabSections,
+        ...prefs.standaloneSections,
+      ];
 
   AppSection get _active =>
       _current ?? (_sections.isEmpty ? AppSection.home : _sections.first);
 
-  /// 底栏透镜当前停在第几个：拖动预览优先，否则用已提交的页面。
-  int get _dockIndex {
+  /// 底栏高光当前停在哪个入口：拖动预览优先，否则用已提交的页面。
+  AppSection get _dockSection {
     final preview = _previewIndex;
-    if (preview != null) return preview;
-    final index = _sections.indexOf(_active);
-    return index < 0 ? 0 : index;
+    if (preview != null && preview >= 0 && preview < _sections.length) {
+      return _sections[preview];
+    }
+    return _active;
   }
 
   void _select(AppSection section) {
@@ -111,10 +119,13 @@ class _ShellPageState extends State<ShellPage> {
                       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                       // 底栏固定在 Scaffold 底部：内容区滑动时它完全不动，
                       // 只有选中态（液态透镜的位置与颜色）跟随变化。
+                      //
+                      // 双件式：左边胶囊装标签组，右边一枚独立圆形按钮装搜索。
                       child: LiquidGlassDock(
-                        sections: sections,
-                        activeIndex: _dockIndex,
-                        onSelect: (index) => _select(sections[index]),
+                        tabs: prefs.tabSections,
+                        standalone: prefs.standaloneSections,
+                        active: _dockSection,
+                        onSelect: _select,
                       ),
                     ),
                   ),
@@ -135,8 +146,7 @@ class _ShellPageState extends State<ShellPage> {
                     sections: sections,
                     // 宽屏侧栏与窄屏底栏共用同一份"预览下标"，
                     // 拖动过程中高光跟手移动，两端表现一致。
-                    active: sections[
-                        _dockIndex.clamp(0, sections.length - 1)],
+                    active: _dockSection,
                     extended: extended,
                     onSelect: _select,
                   ),

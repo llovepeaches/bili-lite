@@ -19,16 +19,25 @@ class AppPrefs extends ChangeNotifier {
   static const String _keySections = 'prefs.navSections';
   static const String _keyCardStyle = 'prefs.cardStyle';
 
+  /// 全部可见入口（按用户配置的顺序，含独立入口）。
   List<AppSection> _sections = <AppSection>[
     AppSection.home,
-    AppSection.search,
     AppSection.library,
     AppSection.settings,
+    AppSection.search,
   ];
   CardStyle _cardStyle = CardStyle.immersive;
 
   /// 当前导航项（按用户配置的顺序）。
   List<AppSection> get sections => List<AppSection>.unmodifiable(_sections);
+
+  /// 底栏**胶囊内**的标签组：挤在同一条玻璃里的那几项，可排序。
+  List<AppSection> get tabSections =>
+      _sections.where((s) => !s.standalone).toList(growable: false);
+
+  /// 底栏右侧的**独立入口**：从胶囊里分出来的那几项，固定在最右边。
+  List<AppSection> get standaloneSections =>
+      _sections.where((s) => s.standalone).toList(growable: false);
 
   CardStyle get cardStyle => _cardStyle;
 
@@ -53,13 +62,26 @@ class AppPrefs extends ChangeNotifier {
     await LocalStore.instance.setString(_keyCardStyle, style.key);
   }
 
-  /// 把某个分区移到新位置。
+  /// 把某个分区在**同组内**上下移动。
+  ///
+  /// 标签组与独立入口是两套独立的顺序：独立入口固定在底栏右侧，
+  /// 不参与标签组的排序，所以在标签之间移动不会把搜索拖进胶囊里。
   Future<void> moveSection(AppSection section, int offset) async {
     final list = List<AppSection>.from(_sections);
     final index = list.indexOf(section);
     if (index < 0) return;
-    final target = index + offset;
-    if (target < 0 || target >= list.length) return;
+
+    // 只在「同类」的下标之间移动。
+    final sameKind = <int>[
+      for (var i = 0; i < list.length; i++)
+        if (list[i].standalone == section.standalone) i
+    ];
+    final positionInKind = sameKind.indexOf(index);
+    if (positionInKind < 0) return;
+    final targetPosition = positionInKind + offset;
+    if (targetPosition < 0 || targetPosition >= sameKind.length) return;
+
+    final target = sameKind[targetPosition];
     list.removeAt(index);
     list.insert(target, section);
     _sections = list;
@@ -74,7 +96,13 @@ class AppPrefs extends ChangeNotifier {
       if (list.length <= 1) return;
       list.remove(section);
     } else {
-      list.add(section);
+      // 恢复时放回同类别的末尾，保持「独立入口在最右」的约定。
+      final lastOfKind = list.lastIndexWhere((s) => s.standalone == section.standalone);
+      if (lastOfKind < 0) {
+        list.add(section);
+      } else {
+        list.insert(lastOfKind + 1, section);
+      }
     }
     _sections = list;
     notifyListeners();
@@ -90,9 +118,9 @@ class AppPrefs extends ChangeNotifier {
   Future<void> reset() async {
     _sections = <AppSection>[
       AppSection.home,
-      AppSection.search,
       AppSection.library,
       AppSection.settings,
+      AppSection.search,
     ];
     _cardStyle = CardStyle.immersive;
     notifyListeners();

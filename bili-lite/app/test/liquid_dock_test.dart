@@ -198,38 +198,94 @@ void main() {
   });
 
   group('LiquidGlassDock', () {
-    testWidgets('渲染全部入口，并高亮当前项', (tester) async {
+    const tabs = <AppSection>[
+      AppSection.home,
+      AppSection.library,
+      AppSection.settings,
+    ];
+    const standalone = <AppSection>[AppSection.search];
+
+    testWidgets('胶囊只渲染标签组，独立入口单独渲染', (tester) async {
       await tester.pumpWidget(wrap(
         const LiquidGlassDock(
-          sections: AppSection.values,
-          activeIndex: 1,
+          tabs: tabs,
+          standalone: standalone,
+          active: AppSection.home,
           onSelect: _noop,
         ),
       ));
 
+      // 胶囊里有标签组的三项。
       expect(find.text('首页'), findsOneWidget);
-      expect(find.text('搜索'), findsOneWidget);
       expect(find.text('我的'), findsOneWidget);
       expect(find.text('设置'), findsOneWidget);
+      // 搜索不在胶囊里，它是右侧那枚独立按钮。
+      expect(find.text('搜索'), findsNothing);
+      expect(find.byIcon(AppSection.search.icon), findsOneWidget);
     });
 
-    testWidgets('点击入口回调对应下标', (tester) async {
-      final picked = <int>[];
+    testWidgets('点击标签回调对应的入口', (tester) async {
+      final picked = <AppSection>[];
       await tester.pumpWidget(wrap(
         LiquidGlassDock(
-          sections: AppSection.values,
-          activeIndex: 0,
+          tabs: tabs,
+          standalone: standalone,
+          active: AppSection.home,
           onSelect: picked.add,
         ),
       ));
 
       await tester.tap(find.text('设置'));
-      expect(picked, <int>[3]);
+      expect(picked, <AppSection>[AppSection.settings]);
+    });
+
+    testWidgets('点击独立圆形按钮回调搜索', (tester) async {
+      final picked = <AppSection>[];
+      await tester.pumpWidget(wrap(
+        LiquidGlassDock(
+          tabs: tabs,
+          standalone: standalone,
+          active: AppSection.home,
+          onSelect: picked.add,
+        ),
+      ));
+
+      await tester.tap(find.byIcon(AppSection.search.icon));
+      expect(picked, <AppSection>[AppSection.search]);
+    });
+
+    testWidgets('选中独立入口时用粉色透镜图标', (tester) async {
+      await tester.pumpWidget(wrap(
+        const LiquidGlassDock(
+          tabs: tabs,
+          standalone: standalone,
+          active: AppSection.search,
+          onSelect: _noop,
+        ),
+      ));
+
+      expect(find.byIcon(AppSection.search.selectedIcon), findsOneWidget);
+      expect(find.byIcon(AppSection.search.icon), findsNothing);
+    });
+
+    testWidgets('独立入口不在胶囊内：位置在胶囊右侧', (tester) async {
+      await tester.pumpWidget(wrap(
+        const LiquidGlassDock(
+          tabs: tabs,
+          standalone: standalone,
+          active: AppSection.home,
+          onSelect: _noop,
+        ),
+      ));
+
+      final capsule = tester.getRect(find.text('首页'));
+      final button = tester.getRect(find.byIcon(AppSection.search.icon));
+      expect(button.left, greaterThan(capsule.right));
     });
   });
 }
 
-void _noop(int index) {}
+void _noop(AppSection section) {}
 
 class _Counter extends StatefulWidget {
   const _Counter();
