@@ -1,7 +1,7 @@
 name: bililite
 description: Bili Lite — 基于哔哩哔哩公开数据的简洁第三方多端客户端
 publish_to: 'none'
-version: 0.1.1+2
+version: 0.1.2+3
 
 environment:
   sdk: ">=2.17.0 <3.0.0"
