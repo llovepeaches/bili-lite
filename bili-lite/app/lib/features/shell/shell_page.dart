@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 
 import '../../core/nav_section.dart';
 import '../../core/responsive.dart';
@@ -8,14 +7,18 @@ import '../../core/tokens.dart';
 import '../../state/globals.dart';
 import '../../widgets/app_logo.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/liquid_dock.dart';
 import '../home/home_view.dart';
 import '../library/library_view.dart';
 import '../search/search_view.dart';
 import '../settings/settings_view.dart';
+import 'swipe_deck.dart';
 
-/// 导航壳：窄屏悬浮玻璃 dock，宽屏悬浮玻璃侧栏，页面用 IndexedStack 保活。
+/// 导航壳：窄屏悬浮液态玻璃 dock，宽屏悬浮玻璃侧栏。
 ///
-/// 除了点 dock / 侧栏，也支持在内容区左右滑动切换入口（[#_swipeable]）。
+/// 内容区用 [SwipeDeck] 承载：左右滑动时**只有内容页面跟手平移**，
+/// 底栏固定不动，只通过选中项（液态透镜）的位置与颜色变化指示当前页面。
+/// 页面切换手势走 [SwipeDeck]，内部小控件（分区横条、Slider）仍优先拿到手势。
 ///
 /// 导航项不再写死：来自 `AppPrefs.sections`，用户可以在设置里增删与排序
 /// （参考 PiliPlus 的 `NavBarConfig`）。这里用 [AppSection] 而不是下标来
@@ -30,56 +33,36 @@ class ShellPage extends StatefulWidget {
 class _ShellPageState extends State<ShellPage> {
   AppSection? _current;
 
-  /// 底部 dock 是否显示。向下滚动时收起，向上滚动时回来。
-  bool _dockVisible = true;
+  /// 拖动过程中底栏透镜预览到的下标；与 [_active] 分离，
+  /// 这样「高光跟手移动」和「真正切到了哪一页」是两件事。
+  int? _previewIndex;
 
   List<AppSection> get _sections => prefs.sections;
 
   AppSection get _active =>
       _current ?? (_sections.isEmpty ? AppSection.home : _sections.first);
 
+  /// 底栏透镜当前停在第几个：拖动预览优先，否则用已提交的页面。
+  int get _dockIndex {
+    final preview = _previewIndex;
+    if (preview != null) return preview;
+    final index = _sections.indexOf(_active);
+    return index < 0 ? 0 : index;
+  }
+
   void _select(AppSection section) {
     if (_active == section) return;
     setState(() {
       _current = section;
-      _dockVisible = true;
     });
+    // 内容区跟着滑过去（SwipeDeck 受控于 [_active]），底栏只更新选中态。
   }
 
-  /// 左右滑动切换导航入口。
+  /// 内容区滚动时不做任何处理。
   ///
-  /// 内容容器仍是 IndexedStack（滚动位置、搜索输入、列表状态全部保活），
-  /// 手势只负责改选中项，因此不会像直接换成 PageView 那样在滑出视口时
-  /// 销毁并重建子页面。用 deferToChild 把点击 / 垂直滚动优先留给子页面，
-  /// 只有明确的水平快速滑动才切页，避免抢卡片横滑与 Slider 的手势。
-  Widget _swipeable(List<AppSection> sections, Widget child) {
-    return GestureDetector(
-      behavior: HitTestBehavior.deferToChild,
-      onHorizontalDragEnd: (DragEndDetails details) {
-        final velocity = details.primaryVelocity ?? 0;
-        if (velocity.abs() < 260) return;
-        final current = _indexOf(sections, _active);
-        // 左滑（负速度）看下一个入口，右滑回上一个。
-        final next = velocity < 0 ? current + 1 : current - 1;
-        if (next < 0 || next >= sections.length) return;
-        _select(sections[next]);
-      },
-      child: child,
-    );
-  }
-
-  /// 滚动方向驱动 dock 显隐。借鉴 PiliPlus 的 hideBottomBar：
-  /// 内容很长时把 dock 收起，把整屏留给内容。
-  bool _onScroll(UserScrollNotification notification) {
-    if (!prefs.hideDockOnScroll) return false;
-    final direction = notification.direction;
-    if (direction == ScrollDirection.reverse && _dockVisible) {
-      setState(() => _dockVisible = false);
-    } else if (direction == ScrollDirection.forward && !_dockVisible) {
-      setState(() => _dockVisible = true);
-    }
-    return false;
-  }
+  /// 底栏固定不动是这个需求的核心：以前这里会根据滚动方向收起底栏，
+  /// 现在改成始终常驻，滑动切页时也只有内容区在动。
+  bool _onScroll(UserScrollNotification notification) => false;
 
   @override
   Widget build(BuildContext context) {
@@ -92,10 +75,16 @@ class _ShellPageState extends State<ShellPage> {
             body: Center(child: Text('至少需要保留一个导航入口')),
           );
         }
-        // 用户改了导航项顺序之后，用新的 key 重建 IndexedStack，
+        // 用户改了导航项顺序之后，用新的 key 重建内容容器，
         // 否则旧的子页面会按旧下标留在原位。
         final stackKey =
             ValueKey<String>(sections.map((e) => e.key).join(','));
+        final activeIndex = _indexOf(sections, _active);
+        // 导航项顺序变了以后，旧的预览下标已经指向另一个入口，清掉它。
+        final preview = _previewIndex;
+        if (preview != null && preview >= sections.length) {
+          _previewIndex = null;
+        }
 
         return LayoutBuilder(builder: (context, constraints) {
           final width = constraints.maxWidth;
@@ -112,31 +101,20 @@ class _ShellPageState extends State<ShellPage> {
                 onWillPop: _handleWillPop,
                 child: Scaffold(
                   extendBody: true,
-                  body: _swipeable(
-                    sections,
-                    NotificationListener<UserScrollNotification>(
-                      onNotification: _onScroll,
-                      child: IndexedStack(
-                        key: stackKey,
-                        index: _indexOf(sections, _active),
-                        children: _pagesFor(sections),
-                      ),
-                    ),
+                  body: NotificationListener<UserScrollNotification>(
+                    onNotification: _onScroll,
+                    child: _deck(sections, stackKey, activeIndex),
                   ),
                   bottomNavigationBar: SafeArea(
                     top: false,
-                    child: AnimatedSlide(
-                      duration: const Duration(milliseconds: 240),
-                      curve: Curves.easeOutCubic,
-                      offset:
-                          _dockVisible ? Offset.zero : const Offset(0, 1.4),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                        child: _GlassDock(
-                          sections: sections,
-                          active: _active,
-                          onSelect: _select,
-                        ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                      // 底栏固定在 Scaffold 底部：内容区滑动时它完全不动，
+                      // 只有选中态（液态透镜的位置与颜色）跟随变化。
+                      child: LiquidGlassDock(
+                        sections: sections,
+                        activeIndex: _dockIndex,
+                        onSelect: (index) => _select(sections[index]),
                       ),
                     ),
                   ),
@@ -155,25 +133,54 @@ class _ShellPageState extends State<ShellPage> {
                 children: <Widget>[
                   _GlassSidebar(
                     sections: sections,
-                    active: _active,
+                    // 宽屏侧栏与窄屏底栏共用同一份"预览下标"，
+                    // 拖动过程中高光跟手移动，两端表现一致。
+                    active: sections[
+                        _dockIndex.clamp(0, sections.length - 1)],
                     extended: extended,
                     onSelect: _select,
                   ),
                   Expanded(
-                    child: _swipeable(
-                      sections,
-                      IndexedStack(
-                        key: stackKey,
-                        index: _indexOf(sections, _active),
-                        children: _pagesFor(sections),
-                      ),
-                    ),
+                    child: _deck(sections, stackKey, activeIndex),
                   ),
                 ],
               ),
             ),
           );
         });
+      },
+    );
+  }
+
+  /// 内容区：跟手滑动的分页容器。
+  ///
+  /// 索引由 [_active] 单向控制：外部（底栏点击）改 [_active] → 内容区滑过去；
+  /// 用户滑动 → 内容区吸附完成后回调 [SwipeDeck.onIndexChanged] → 改 [_active]。
+  /// 拖动过程中只更新高光预览（[SwipeDeck.onIndexPreview]），不提交页面切换。
+  Widget _deck(
+    List<AppSection> sections,
+    Key key,
+    int activeIndex,
+  ) {
+    return SwipeDeck(
+      key: key,
+      index: activeIndex,
+      pages: _pagesFor(sections),
+      onIndexChanged: (index) {
+        if (index < 0 || index >= sections.length) return;
+        if (_current == sections[index]) {
+          setState(() => _previewIndex = null);
+          return;
+        }
+        setState(() {
+          _current = sections[index];
+          _previewIndex = null;
+        });
+      },
+      onIndexPreview: (index) {
+        if (index < 0 || index >= sections.length) return;
+        if (_previewIndex == index) return;
+        setState(() => _previewIndex = index);
       },
     );
   }
@@ -279,19 +286,16 @@ class _GlassSidebar extends StatelessWidget {
                 height: navHeight,
                 child: Stack(
                   children: <Widget>[
+                    // 选中态用与窄屏底栏同一枚液态透镜（[LiquidLens]），
+                    // 两种形态下的高光是同一套视觉语言。
                     AnimatedPositioned(
                       duration: const Duration(milliseconds: 340),
                       curve: Curves.easeOutCubic,
                       top: sections.indexOf(active) * _railItemHeight + 3,
-                      left: 0,
-                      right: 0,
-                      height: _railItemHeight - 6,
-                      child: GlassPanel(
-                        radius: 999,
-                        padding: EdgeInsets.zero,
-                        tint: AppColors.pink,
-                        child: const SizedBox.shrink(),
-                      ),
+                      left: extended ? 6 : 0,
+                      width: extended ? 40 : 44,
+                      height: 44,
+                      child: const LiquidLens(size: 44),
                     ),
                     ...List<Widget>.generate(sections.length, (i) {
                       final section = sections[i];
@@ -310,10 +314,16 @@ class _GlassSidebar extends StatelessWidget {
                                 : MainAxisAlignment.center,
                             children: <Widget>[
                               if (extended) const SizedBox(width: 14),
-                              Icon(
-                                selected ? section.selectedIcon : section.icon,
-                                size: 21,
-                                color: selected ? AppColors.pink : sub,
+                              // 透镜宽 44，图标居中其中。
+                              SizedBox(
+                                width: 44,
+                                child: Center(
+                                  child: Icon(
+                                    selected ? section.selectedIcon : section.icon,
+                                    size: 21,
+                                    color: selected ? AppColors.pink : sub,
+                                  ),
+                                ),
                               ),
                               if (extended) ...<Widget>[
                                 const SizedBox(width: 14),
@@ -382,87 +392,6 @@ class _GlassSidebar extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// 窄屏：悬浮玻璃 dock，半透明叠在内容之上，选中胶囊横向滑动。
-class _GlassDock extends StatelessWidget {
-  const _GlassDock({
-    required this.sections,
-    required this.active,
-    required this.onSelect,
-  });
-
-  final List<AppSection> sections;
-  final AppSection active;
-  final ValueChanged<AppSection> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final sub = context.subTextColor;
-
-    return LayoutBuilder(builder: (context, constraints) {
-      final innerWidth = constraints.maxWidth - 12;
-      final itemWidth = innerWidth / sections.length;
-      return GlassPanel(
-        radius: 26,
-        padding: const EdgeInsets.all(6),
-        specular: true,
-        child: SizedBox(
-          height: 56,
-          child: Stack(
-            children: <Widget>[
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 340),
-                curve: Curves.easeOutCubic,
-                left: sections.indexOf(active) * itemWidth + 4,
-                top: 3,
-                width: itemWidth - 8,
-                height: 50,
-                child: GlassPanel(
-                  radius: 999,
-                  padding: EdgeInsets.zero,
-                  tint: AppColors.pink,
-                  child: const SizedBox.shrink(),
-                ),
-              ),
-              Row(
-                children: List<Widget>.generate(sections.length, (i) {
-                  final section = sections[i];
-                  final selected = section == active;
-                  return SizedBox(
-                    width: itemWidth,
-                    height: 56,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () => onSelect(section),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: <Widget>[
-                          Icon(
-                            selected ? section.selectedIcon : section.icon,
-                            size: 21,
-                            color: selected ? AppColors.pink : sub,
-                          ),
-                          const SizedBox(height: 3),
-                          Text(section.label,
-                              style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: selected
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                  color: selected ? AppColors.pink : sub)),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ],
-          ),
-        ),
-      );
-    });
   }
 }
 

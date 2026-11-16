@@ -4,7 +4,7 @@ import '../core/card_style.dart';
 import '../core/nav_section.dart';
 import '../core/storage.dart';
 
-/// 用户偏好：导航项顺序与显隐、卡片样式、滚动时是否隐藏底部 dock。
+/// 用户偏好：导航项顺序与显隐、卡片样式。
 ///
 /// 全部走 `LocalStore` 门面，因此与其它本地数据共用同一套持久化约定
 /// （设置页的「清空全部本地数据」也会一并清掉这里）。
@@ -18,7 +18,6 @@ class AppPrefs extends ChangeNotifier {
 
   static const String _keySections = 'prefs.navSections';
   static const String _keyCardStyle = 'prefs.cardStyle';
-  static const String _keyHideDock = 'prefs.hideDockOnScroll';
 
   List<AppSection> _sections = <AppSection>[
     AppSection.home,
@@ -27,15 +26,11 @@ class AppPrefs extends ChangeNotifier {
     AppSection.settings,
   ];
   CardStyle _cardStyle = CardStyle.immersive;
-  bool _hideDockOnScroll = true;
 
   /// 当前导航项（按用户配置的顺序）。
   List<AppSection> get sections => List<AppSection>.unmodifiable(_sections);
 
   CardStyle get cardStyle => _cardStyle;
-
-  /// 向下滚动时是否收起底部 dock（PiliPlus 的 hideBottomBar）。
-  bool get hideDockOnScroll => _hideDockOnScroll;
 
   void _load() {
     final stored = LocalStore.instance.getStringList(_keySections);
@@ -49,7 +44,6 @@ class AppPrefs extends ChangeNotifier {
       if (parsed.isNotEmpty) _sections = parsed;
     }
     _cardStyle = CardStyle.fromKey(LocalStore.instance.getString(_keyCardStyle) ?? '');
-    _hideDockOnScroll = LocalStore.instance.getBool(_keyHideDock) ?? true;
   }
 
   Future<void> setCardStyle(CardStyle style) async {
@@ -57,13 +51,6 @@ class AppPrefs extends ChangeNotifier {
     _cardStyle = style;
     notifyListeners();
     await LocalStore.instance.setString(_keyCardStyle, style.key);
-  }
-
-  Future<void> setHideDockOnScroll(bool value) async {
-    if (_hideDockOnScroll == value) return;
-    _hideDockOnScroll = value;
-    notifyListeners();
-    await LocalStore.instance.setBool(_keyHideDock, value);
   }
 
   /// 把某个分区移到新位置。
@@ -108,10 +95,8 @@ class AppPrefs extends ChangeNotifier {
       AppSection.settings,
     ];
     _cardStyle = CardStyle.immersive;
-    _hideDockOnScroll = true;
     notifyListeners();
     await LocalStore.instance.remove(_keySections);
     await LocalStore.instance.remove(_keyCardStyle);
-    await LocalStore.instance.remove(_keyHideDock);
   }
 }

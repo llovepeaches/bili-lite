@@ -108,24 +108,24 @@ class InterfaceSection extends StatelessWidget {
               const SizedBox(height: 10),
               const NavConfigEditor(),
               const SizedBox(height: 14),
-              Row(
-                children: <Widget>[
-                  const Expanded(
-                    child: Text('滚动时收起底部导航',
+              GlassPanel(
+                radius: AppRadius.control,
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text('底栏与手势',
                         style: TextStyle(
                             fontSize: 13, fontWeight: FontWeight.w600)),
-                  ),
-                  Switch(
-                    value: prefs.hideDockOnScroll,
-                    activeColor: AppColors.pink,
-                    onChanged: (v) => prefs.setHideDockOnScroll(v),
-                  ),
-                ],
-              ),
-              Text(
-                '向下滚动列表时自动收起底部导航，把整屏留给内容；'
-                '向上滚动或切换页面时自动恢复。宽屏使用侧边栏，不受影响。',
-                style: TextStyle(fontSize: 11, color: sub, height: 1.5),
+                    const SizedBox(height: 6),
+                    Text(
+                      '底部导航栏为液态玻璃材质，固定不动；'
+                      '在内容区左右滑动即可切换页面，滑动时底栏保持原位，'
+                      '只通过选中项高光指示当前页面。',
+                      style: TextStyle(fontSize: 11, color: sub, height: 1.5),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
