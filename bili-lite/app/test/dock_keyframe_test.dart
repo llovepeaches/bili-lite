@@ -20,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 多次会**死锁**（Skia 的 raster 线程等一个已经被消费的 future）。
 /// 所以这里把每一帧拆成**独立的 testWidgets**，每个用例只栅格化一次。
 ///
-/// 产出的图在仓库的 `docs/preview/` 下，命名 `95-r9-keyframe-*.png`。
+/// 产出的图在仓库的 `docs/preview/` 下，命名 `99-r20-keyframe-*.png`。
 void main() {
   final List<AppSection> tabs = <AppSection>[
     AppSection.home,
@@ -96,7 +96,7 @@ void main() {
 
     await dump(
       tester,
-      step == 0 ? '95-r9-keyframe-rest' : '95-r9-keyframe-$step',
+      step == 0 ? '99-r20-keyframe-rest' : '99-r20-keyframe-$step',
     );
   }
 
@@ -141,7 +141,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
     }
 
-    await dump(tester, '96-r9-scrub-$step');
+    await dump(tester, '100-r20-scrub-$step');
 
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 800));

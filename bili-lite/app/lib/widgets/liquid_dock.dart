@@ -12,6 +12,7 @@ import 'glass_drop.dart';
 import 'glass_drop_motion.dart';
 import 'glass_press.dart';
 import 'glass_sample.dart';
+import 'squircle.dart';
 
 /// iOS 26 风格的液态玻璃底栏。
 ///
@@ -163,7 +164,10 @@ class _PlainDock extends StatelessWidget {
             height: capsuleHeight,
             decoration: BoxDecoration(
               color: p.plainCard,
-              borderRadius: BorderRadius.circular(capsuleHeight / 2),
+              // 玻璃关闭时的退化版也要用连续曲率圆角，
+              // 否则「玻璃开关」一开一关，胶囊的轮廓会肉眼可见地变形。
+              borderRadius:
+                  BorderRadius.circular(GlassShape.capsuleRadius(capsuleHeight)),
               border: Border.all(color: p.plainBorder),
             ),
             child: _PlainCapsuleContent(
@@ -232,6 +236,14 @@ class _GlassDock extends StatefulWidget {
 
   /// 两件玻璃之间的间隙。
   static const double _gap = 10;
+
+  /// 单个 tab 的最小触控宽度（Apple HIG 的 44pt 下限）。
+  static const double _minTabWidth = 44.0;
+
+  /// 独立圆形按钮的最小边长。
+  ///
+  /// 窄屏时它会被压缩，但不低于 44 —— 否则就不好点了。
+  static const double _minButtonSize = 44.0;
 
   @override
   State<_GlassDock> createState() => _GlassDockState();
@@ -314,9 +326,41 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
     final sub = context.subTextColor;
 
     final bool hasButton = widget.standalone.isNotEmpty;
-    final double capsuleWidth = hasButton
-        ? math.max(0, widget.width - _GlassDock._gap - widget.buttonSize)
-        : widget.width;
+
+    // ---------------------------------------------------------------
+    // 窄屏保护：圆形按钮不能把标签组挤没
+    // ---------------------------------------------------------------
+    //
+    // 双件式布局里，圆形按钮是**固定宽度**的（58），
+    // 胶囊拿剩下的全部宽度。
+    //
+    // 在窄屏（比如 320pt）+ 多个 tab 的组合下，
+    // 胶囊会被挤到每个 tab 只有二三十点宽 ——
+    // 水滴玻璃珠撞在一起，标签也被挤没。
+    //
+    // 所以这里给标签组留一条**底线**：胶囊至少要能放下
+    // 「每个 tab 一个 44pt 触控区」。不够的话先压缩圆形按钮
+    // （它只有一个图标，压缩到 44 仍可用），
+    // 真的还不够（tab 特别多）才让胶囊按实际宽度走 ——
+    // 此时靠整格可点 + 文字省略号兜底。
+    final int tabCount = widget.tabs.length;
+    final double minCapsuleWidth = hasButton && tabCount > 0
+        ? tabCount * _GlassDock._minTabWidth
+        : 0.0;
+
+    double buttonSize = widget.buttonSize;
+    double capsuleWidth = widget.width;
+    if (hasButton) {
+      capsuleWidth = math.max(0, widget.width - _GlassDock._gap - buttonSize);
+      if (capsuleWidth < minCapsuleWidth) {
+        // 先压按钮。
+        final double available =
+            widget.width - _GlassDock._gap - minCapsuleWidth;
+        buttonSize = math.max(_GlassDock._minButtonSize, available);
+        capsuleWidth =
+            math.max(0, widget.width - _GlassDock._gap - buttonSize);
+      }
+    }
 
     // 画布坐标 = 底栏坐标 + _pad。
     final Rect capsuleRect = Rect.fromLTWH(
@@ -328,14 +372,14 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
 
     // 圆形玻璃：按压时按弹簧进度放大（Compose 的
     // `maxScale = (size.width + 16dp) / size.width`）。
-    final double maxScale = (widget.buttonSize + 16) / widget.buttonSize;
+    final double maxScale = (buttonSize + 16) / buttonSize;
     final double scale = 1 + (maxScale - 1) * progress;
-    final double circleSize = widget.buttonSize * scale;
+    final double circleSize = buttonSize * scale;
 
     final Rect? circleRect = hasButton
         ? Rect.fromCenter(
             center: Offset(
-              _pad + widget.width - widget.buttonSize / 2,
+              _pad + widget.width - buttonSize / 2,
               _pad + widget.rowHeight / 2,
             ),
             width: circleSize,
@@ -344,16 +388,11 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
         : null;
 
     // 胶囊 + 圆形的并集：共享采样层只在这块形状内可见。
-    final Path union = Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(
-          capsuleRect,
-          Radius.circular(widget.capsuleHeight / 2),
-        ),
-      );
-    if (circleRect != null) {
-      union.addOval(circleRect);
-    }
+    //
+    // 胶囊的两端用**连续曲率**圆角（iOS 的 continuous curvature），
+    // 而不是正圆弧 —— 正圆弧在切点处曲率会从 0 突然跳到 1/r，
+    // 那道折角就是「玻璃是贴上去的」的观感来源。
+    final Path union = GlassShape.union(capsuleRect, circleRect);
 
     // ---- 胶囊的表面层与内容 ----
     final Widget capsuleFlow = clock == null
@@ -364,7 +403,7 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
           );
 
     final Widget capsuleSurface = _GlassSurface(
-      circle: false,
+      shape: (Rect r) => GlassShape.capsule(r),
       gradient: _surfaceGradient(dark, sampled: true),
       // 底栏**不染色相**。
       //
@@ -452,7 +491,7 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
             );
 
       final Widget circleSurface = _GlassSurface(
-        circle: true,
+        shape: (Rect r) => GlassShape.circle(r),
         gradient: _surfaceGradient(dark, sampled: true),
         // 同胶囊：不染色相，保持中性乳白 / 烟熏灰。
         hue: null,
@@ -505,11 +544,20 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
             ring,
             Icon(
               selected ? section.selectedIcon : section.icon,
-              size: 22,
+              // 图标随按钮尺寸缩放 —— 窄屏时按钮被压到 44，
+              // 图标要跟着缩，否则会撑满整枚按钮。
+              size: (buttonSize * 0.38).clamp(18.0, 22.0),
               color: selected ? AppColors.pink : sub,
             ),
             // Liquid Glass v2 的暗边。
-            const Positioned.fill(child: _DarkenedEdge(circle: true)),
+            Positioned.fill(
+              child: GlassShapeEdge(
+                shape: (Rect r) => GlassShape.circle(r),
+                edgeColor: Colors.black.withOpacity(dark ? 0.30 : 0.10),
+                edgeWidth: 1.4,
+                innerShade: dark ? 0.24 : 0.06,
+              ),
+            ),
           ],
         ),
       );
@@ -553,9 +601,10 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
                         // 每件玻璃在共享的模糊结果上再套一层自己的透镜。
                         Positioned.fromRect(
                           rect: capsuleRect,
-                          child: ClipRRect(
-                            borderRadius:
-                                BorderRadius.circular(widget.capsuleHeight / 2),
+                          child: ClipPath(
+                            clipper: PathClipper(
+                              GlassShape.capsule(capsuleRect),
+                            ),
                             child: GlassSample(
                               // 模糊已经在共享层做过，这里只留透镜。
                               sigma: 0.01,
@@ -584,14 +633,32 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
               // 表面层与内容：画在玻璃之上（这一层不参与采样）。
               Positioned.fromRect(
                 rect: capsuleRect,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(widget.capsuleHeight / 2),
+                child: ClipPath(
+                  clipper: PathClipper(GlassShape.capsule(capsuleRect)),
                   child: Stack(
                     children: <Widget>[
                       Positioned.fill(child: capsuleSurface),
+                      // 内壁顶部镜面亮线：让玻璃从内容上「浮」起来。
+                      //
+                      // 它画在表面层之上、暗边之下 —— 亮线是玻璃**内侧**的光，
+                      // 不是浮在玻璃上面的贴纸。
+                      Positioned.fill(
+                        child: GlassTopHighlight(
+                          shape: (Rect r) => GlassShape.capsule(r),
+                          color: Colors.white.withOpacity(dark ? 0.30 : 0.72),
+                          width: 1.6,
+                        ),
+                      ),
                       Positioned.fill(child: scrubbableCapsule),
                       // Liquid Glass v2 的暗边：压在最上面，把形状「勒」出来。
-                      Positioned.fill(child: const _DarkenedEdge(circle: false)),
+                      Positioned.fill(
+                        child: GlassShapeEdge(
+                          shape: (Rect r) => GlassShape.capsule(r),
+                          edgeColor: Colors.black.withOpacity(dark ? 0.30 : 0.10),
+                          edgeWidth: 1.4,
+                          innerShade: dark ? 0.24 : 0.06,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -670,7 +737,7 @@ Gradient _surfaceGradient(bool dark, {required bool sampled}) {
 /// 饱和度明度」，说明 Hue 确实作用在滤镜输出（backdrop）上。
 class _GlassSurface extends StatelessWidget {
   const _GlassSurface({
-    required this.circle,
+    required this.shape,
     required this.gradient,
     required this.flow,
     this.hue,
@@ -678,7 +745,14 @@ class _GlassSurface extends StatelessWidget {
     this.hueMix = 0,
   });
 
-  final bool circle;
+  /// 形状：与裁剪层、暗边层共用同一条路径。
+  ///
+  /// 上一版这里用 `BorderRadius.circular(1000)` 画渐变，
+  /// 那是一个「半径远大于边长」的圆角矩形 ——
+  /// 视觉上接近胶囊，但**与真正的连续曲率胶囊不是同一条曲线**，
+  /// 于是 backdrop 采样区的边缘与表面层的边缘会有极细的错位，
+  /// 亮边处能看到一条发虚的接缝。
+  final Path Function(Rect rect) shape;
   final Gradient gradient;
   final Widget flow;
 
@@ -701,13 +775,8 @@ class _GlassSurface extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        DecoratedBox(
-          decoration: BoxDecoration(
-            shape: circle ? BoxShape.circle : BoxShape.rectangle,
-            borderRadius: circle ? null : BorderRadius.circular(1000),
-            gradient: gradient,
-          ),
-        ),
+        // 渐变按**同一条路径**填充，与裁剪层严丝合缝。
+        GlassShapeSurface(shape: shape, gradient: gradient),
         // 白色表面层：等效 Compose 的 onDrawSurface。
         if (config.surface > 0)
           IgnorePointer(
@@ -795,70 +864,28 @@ class _ShadowBox extends StatelessWidget {
 
     return Positioned.fromRect(
       rect: rect,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: circle ? BoxShape.circle : BoxShape.rectangle,
-          borderRadius: circle
-              ? null
-              : BorderRadius.circular(rect.height / 2),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: dark
-                  ? Colors.black.withOpacity(0.46)
-                  : const Color(0xFF6E648F).withOpacity(0.16),
-              blurRadius: 26,
-              offset: const Offset(0, 10),
-            ),
-            BoxShadow(
-              color: Colors.white.withOpacity(dark ? 0.10 : 0.46),
-              blurRadius: 10,
-              spreadRadius: -4,
-              offset: const Offset(0, -3),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Liquid Glass v2 的「暗边」。
-///
-/// iOS 27 给玻璃加了一圈**变暗的边缘**（*darkened edge*），
-/// 配合更亮的镜面高光，玻璃才有立体感 —— 否则它只是一张半透明的色片。
-///
-/// 实现上用**内阴影**：从形状内侧往里压一圈黑，宽度很窄。
-///
-/// 浅色模式下的强度刻意压得很低 —— 乳白玻璃的边缘本来就很淡，
-/// 暗边一重就变成了一圈灰线，看着像描边而不是玻璃。
-class _DarkenedEdge extends StatelessWidget {
-  const _DarkenedEdge({required this.circle});
-
-  final bool circle;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = GlassPalette.of(context);
-    final dark = p.dark;
-
-    return IgnorePointer(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: circle ? BoxShape.circle : BoxShape.rectangle,
-          borderRadius: circle ? null : BorderRadius.circular(1000),
-          border: Border.all(
-            color: Colors.black.withOpacity(dark ? 0.34 : 0.10),
-            width: 1.4,
+      child: GlassShapeShadow(
+        // 阴影必须跟着**同一条**路径走 ——
+        // 用 BorderRadius 画的影子边缘是圆弧，
+        // 跟连续曲率的胶囊轮廓错开一点点，
+        // 在玻璃下方会露出一圈淡影。
+        shape: (Rect r) =>
+            circle ? GlassShape.circle(r) : GlassShape.capsule(r),
+        shadows: <BoxShadow>[
+          BoxShadow(
+            color: dark
+                ? Colors.black.withOpacity(0.46)
+                : const Color(0xFF6E648F).withOpacity(0.16),
+            blurRadius: 26,
+            offset: const Offset(0, 10),
           ),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withOpacity(dark ? 0.26 : 0.07),
-              blurRadius: 4,
-              spreadRadius: -2,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
+          BoxShadow(
+            color: Colors.white.withOpacity(dark ? 0.10 : 0.46),
+            blurRadius: 10,
+            spreadRadius: -4,
+            offset: const Offset(0, -3),
+          ),
+        ],
       ),
     );
   }
@@ -896,15 +923,28 @@ class _PlainCapsuleContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sub = AppTextColor.tertiary(context);
+    // 标签用**二级**色而不是三级 ——
+    // 三级色（浅色 3.87:1）落在底栏的乳白玻璃上偏淡，
+    // 而底栏是浮在内容之上的，需要比页面内的辅助文字更清楚。
+    final sub = AppTextColor.secondary(context);
     if (tabs.isEmpty) return SizedBox(height: height);
 
     final int activeIndex = active == null ? -1 : tabs.indexOf(active!);
 
     return LayoutBuilder(builder: (context, constraints) {
       final double itemWidth = constraints.maxWidth / tabs.length;
-      final double lensSize =
-          math.min(math.min(itemWidth - 8, 44.0), height - 15);
+
+      // 与 [_CapsuleContent] 用同一套度量 ——
+      // 否则玻璃一开一关，底栏的图标大小和文字位置就会跳。
+      final double labelBlock = _dockLabelHeight + _dockLabelGap;
+      final double iconBox = _dockIconBox(
+        height: height,
+        itemWidth: itemWidth,
+        withLabel: true,
+      );
+      final double iconSize = _dockIconSize(iconBox);
+      final double stackHeight = iconBox + labelBlock;
+      final double stackTop = (height - stackHeight) / 2;
 
       return SizedBox(
         height: height,
@@ -914,13 +954,13 @@ class _PlainCapsuleContent extends StatelessWidget {
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOutCubic,
-                left: activeIndex * itemWidth + (itemWidth - lensSize) / 2,
-                top: (height - lensSize - 15) / 2,
-                width: lensSize,
-                height: lensSize,
+                left: activeIndex * itemWidth + (itemWidth - iconBox) / 2,
+                top: stackTop,
+                width: iconBox,
+                height: iconBox,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(lensSize * 0.42),
+                    borderRadius: BorderRadius.circular(iconBox * 0.42),
                     color: AppColors.pink.withOpacity(0.16),
                   ),
                 ),
@@ -935,31 +975,37 @@ class _PlainCapsuleContent extends StatelessWidget {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => onSelect(section),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Stack(
                       children: <Widget>[
-                        SizedBox(
-                          height: lensSize,
+                        Positioned(
+                          top: stackTop,
+                          left: 0,
+                          right: 0,
+                          height: iconBox,
                           child: Center(
                             child: Icon(
                               selected ? section.selectedIcon : section.icon,
-                              size: (lensSize * 0.52).clamp(16.0, 24.0),
+                              size: iconSize,
                               color: selected ? AppColors.pink : sub,
                             ),
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          section.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: AppFontSize.micro,
-                            height: 1.1,
-                            fontWeight:
-                                selected ? FontWeight.w800 : FontWeight.w500,
-                            color: selected ? AppColors.pink : sub,
+                        Positioned(
+                          top: stackTop + iconBox + _dockLabelGap,
+                          left: 0,
+                          right: 0,
+                          child: Text(
+                            section.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: AppFontSize.micro,
+                              height: 1.1,
+                              fontWeight:
+                                  selected ? FontWeight.w800 : FontWeight.w500,
+                              color: selected ? AppColors.pink : sub,
+                            ),
                           ),
                         ),
                       ],
@@ -975,6 +1021,79 @@ class _PlainCapsuleContent extends StatelessWidget {
   }
 }
 
+/// 标签行里文字的预留高度（字号 10.5、行高 1.1）。
+///
+/// 胶囊版（[_CapsuleContent]）与玻璃关闭时的退化版
+/// （[_PlainCapsuleContent]）共用这一套度量，
+/// 保证「玻璃开关」不会让底栏的排布跳变。
+const double _dockLabelHeight = 12.0;
+
+/// 图标与标签之间的间距。
+///
+/// iOS 26 的 tab bar 里，图标与标签之间只有约 2pt —— 标签几乎贴着图标。
+/// 这里给 3pt，略宽一点点，让小字不至于糊在图标上。
+const double _dockLabelGap = 3.0;
+
+/// 玻璃珠内部的**折射放大倍率**。
+///
+/// 与 [LiquidGlassDrop] 里 `Transform.scale` 的取值保持一致 ——
+/// 玻璃珠把底下的图标放大一点点，那是折射的观感来源。
+///
+/// 必须在这里参与尺寸预算：放大后的图标会比玻璃珠本身**溢出**约
+/// `(倍率 - 1) / 2 × 珠高`，不预留的话图标会顶出胶囊。
+const double _dockDropMagnification = 1.14;
+
+/// 图标槽边长（正方形）—— 水滴玻璃珠、图标、标签都从它派生。
+///
+/// 上一版底栏里有**两套**互不相干的尺寸（`lensSize` 与 `dropHeight`），
+/// 两者不一致时图标会偏离水滴中心、标签也会错位。
+/// 现在统一成这一套度量。
+///
+/// 约束：
+///
+/// * 图标槽不能超过「胶囊高度 − 标签行」**除以折射放大倍率** ——
+///   放大后的图标必须还在胶囊里；
+/// * 也不能超过 tab 的可用宽度（否则相邻水滴会撞上）；
+/// * 最小 26 —— 再小图标就糊了。
+double _dockIconBox({
+  required double height,
+  required double itemWidth,
+  required bool withLabel,
+}) {
+  final double labelBlock = withLabel ? _dockLabelHeight + _dockLabelGap : 0.0;
+  // 竖向：放大后要装得下。
+  final double byHeight =
+      (height - labelBlock) / _dockDropMagnification;
+  return math.max(
+    26.0,
+    math.min(
+      math.min(itemWidth - 8.0, 44.0),
+      // 玻璃珠不能把竖向空间吃满 ——
+      // 珠子一大，图标与文字之间就被撑开一道空档，
+      // 整组看起来是「散的」而不是「一个整体」。
+      // 38 是 iOS tab bar 的观感值。
+      math.min(byHeight, _dockMaxIconBox),
+    ),
+  );
+}
+
+/// 玻璃珠（图标槽）的最大边长。
+///
+/// 珠子一旦接近胶囊高度，图标与标签之间的视觉间隙就被撑开，
+/// 整组标签会显得松散。38 是 iOS tab bar 的观感值。
+const double _dockMaxIconBox = 38.0;
+
+/// 整组标签的视觉上提量。
+///
+/// 10.5pt 的字在 1.1 行高里偏下，不补偿的话文字会贴住胶囊底边。
+const double _dockVisualNudge = 1.5;
+
+/// 图标尺寸：占图标槽的 62%，剩下 38% 是四周的呼吸空间。
+///
+/// iOS 的 tab bar 图标视觉尺寸约 22~24pt，
+/// 而图标槽（玻璃珠罩住的范围）约 34~38pt。
+double _dockIconSize(double iconBox) => (iconBox * 0.60).clamp(18.0, 24.0);
+
 /// 胶囊内部：iOS 式水滴透镜 + 图标文字。
 ///
 /// 这一版把旧版的「粉色圆角方块指示器」换成了 iOS 26/27 的**玻璃水滴**：
@@ -985,7 +1104,7 @@ class _PlainCapsuleContent extends StatelessWidget {
 /// * 按住沿底栏**拖动**可以擦洗水滴，松手落到最近的 tab。
 ///
 /// 运动参数都在 [GlassDropMotion] 里，这里只负责把状态映射成几何。
-class _CapsuleContent extends StatelessWidget {
+class _CapsuleContent extends StatefulWidget {
   const _CapsuleContent({
     required this.tabs,
     required this.active,
@@ -1007,61 +1126,122 @@ class _CapsuleContent extends StatelessWidget {
   /// `.tabBarMinimizeBehavior(.onScrollDown)`）。
   final bool compact;
 
-  /// 文字标签的预留高度（字号 10.5、行高 1.1）。
-  static const double _labelHeight = 12.0;
+  @override
+  State<_CapsuleContent> createState() => _CapsuleContentState();
+}
 
-  /// 图标与标签之间的间距。
-  static const double _labelGap = 3.0;
+/// 标签组的交互状态。
+///
+/// iOS 27 的按下反馈有两层：
+///
+/// 1. **图标回缩** —— 按下时图标微微缩小（不是变色），
+///    松手用弹簧回弹。液态玻璃的手感主要来自这个回弹。
+/// 2. **触点辉光** —— iOS 26 的原话是
+///    *"a soft glow spreads from where the finger touched"*：
+///    一团柔光从手指按下的位置扩散开。
+///
+/// 两者都由 [_GlassPress] 的弹簧驱动，
+/// 所以贴在一起时能同相位地缩放与衰减。
+class _CapsuleContentState extends State<_CapsuleContent>
+    with SingleTickerProviderStateMixin {
+  /// 按压弹簧（图标回缩 + 触点辉光共用一条曲线）。
+  late final GlassPress _press = GlassPress(
+    vsync: this,
+    // 比圆形玻璃那枚更「脆」一点：ratio 0.55、stiffness 420，
+    // 回弹快但不飘 —— 标签组是频繁点击的区域，太弹会显得廉价。
+    dampingRatio: 0.55,
+    stiffness: 420.0,
+  );
+
+  /// 当前被按下的 tab 索引；null 表示没有按压。
+  int? _pressedIndex;
+
+  /// 触点相对胶囊左上角的位置（辉光中心）。
+  Offset? _touchPoint;
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  /// 手指按下。
+  void _handleDown(int index, Offset local) {
+    setState(() {
+      _pressedIndex = index;
+      _touchPoint = local;
+    });
+    _press.press();
+  }
+
+  /// 手指抬起 / 取消。
+  void _handleUp() {
+    if (_pressedIndex == null) return;
+    setState(() {
+      _pressedIndex = null;
+      _touchPoint = null;
+    });
+    _press.release();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final sub = AppTextColor.tertiary(context);
+    final tabs = widget.tabs;
+    final motion = widget.motion;
+    final height = widget.height;
+    final compact = widget.compact;
+    // 标签用**二级**色而不是三级 ——
+    // 三级色（浅色 3.87:1）落在底栏的乳白玻璃上偏淡，
+    // 而底栏是浮在内容之上的，需要比页面内的辅助文字更清楚。
+    final sub = AppTextColor.secondary(context);
     if (tabs.isEmpty) return SizedBox(height: height);
 
     return LayoutBuilder(builder: (context, constraints) {
       final double itemWidth = constraints.maxWidth / tabs.length;
-      // 透镜尺寸跟着可用宽度走，但要留出上下空间给图标 + 文字标签。
-      //
-      // 上一版这里固定 `min(itemWidth - 12, 44)`，忽略了「图标 + 标签」需要
-      // 竖向空间：当底栏被右侧圆形按钮挤窄时，itemWidth 变小，透镜跟着变小，
-      // 但图标仍是硬编码的 22px —— 两者一旦对不齐，图标就会溢出透镜，
-      // 再叠加 Column 溢出，图标和文字就叠在一起了
-      // （见 `docs/preview/50-r7-home.png` 底部首页/搜索/空间那一排）。
-      //
-      // 现在把三者的尺寸绑定在一起算：透镜 = 图标 + 内边距，
-      // 图标随透镜等比缩放，且保证「透镜 + 标签」的总高不超过可用高度。
-      final double available = height - _labelHeight - _labelGap;
-      final double lensSize =
-          math.min(math.min(itemWidth - 8, 44.0), math.max(24.0, available));
-      final double iconSize = (lensSize * 0.52).clamp(16.0, 24.0);
 
-      // compact 模式：标签淡出后，透镜可以占更多高度。
-      final double labelHeight = compact ? 0 : _labelHeight;
-      final double labelGap = compact ? 0 : _labelGap;
+      // ---------------------------------------------------------------
+      // 一套度量，三个用途
+      // ---------------------------------------------------------------
+      //
+      // 上一版这里有**两套**互不相干的尺寸：
+      //
+      // * `lensSize` —— 图标槽的高度，喂给 `SizedBox(height: lensSize)`；
+      // * `dropHeight` —— 水滴玻璃珠的高度，另外算一遍。
+      //
+      // 两者一旦不一致，图标就会偏离水滴的中心，
+      // 标签也会跟着错位（见 `docs/preview/50-r7-home.png`）。
+      //
+      // 现在只有一套：`iconBox` 是图标槽的边长（正方形），
+      // 水滴、图标、标签三者都从它派生。
+      //
+      // 尺寸约束：
+      //
+      // * 图标槽不能超过「胶囊高度 − 标签行 − 间距」；
+      // * 也不能超过 tab 的可用宽度（否则相邻水滴会撞上）；
+      // * 最小 26 —— 再小图标就糊了。
+      final double labelBlock =
+          compact ? 0.0 : _dockLabelHeight + _dockLabelGap;
+      final double iconBox = _dockIconBox(
+        height: height,
+        itemWidth: itemWidth,
+        withLabel: !compact,
+      );
+      final double iconSize = _dockIconSize(iconBox);
 
-      // 水滴的尺寸：**只罩住图标**，不罩住文字标签。
+      // 水滴玻璃珠：正好罩住图标槽（再留 1pt 让边缘光不被裁掉）。
+      final double dropWidth = math.min(iconBox, math.max(26.0, itemWidth - 10.0));
+      final double dropHeight = iconBox;
+
+      // 图标槽 + 标签行整体的垂直居中偏移。
       //
-      // 这是 iOS 的做法 —— 玻璃「水滴」是一颗落在图标上的珠子，
-      // 文字标签在珠子**下面**，被染色成选中色但不被玻璃罩住。
-      //
-      // 形状是**竖着的胶囊**（高 > 宽），读起来才像「一滴水」；
-      // 正圆读起来像「一个圆按钮」。
-      //
-      // 尺寸围绕**图标**算，而不是围绕旧的 lensSize：
-      // 图标 22~24px，水滴 = 图标 + 上下各 7px 内边距 → 约 36×38。
-      //
-      // 关键约束：水滴底边必须**留出标签的空间**，
-      // 否则玻璃珠会压到文字上（第一版就是这个毛病：
-      // `dropHeight = lensSize + 8` 里 lensSize 最大 44，
-      // 水滴高 52 而底栏可用高度才 50，珠子直接盖住了「首页」两个字）。
-      final double dropHeight = math.min(
-        iconSize + 14,
-        math.max(28.0, height - labelHeight - labelGap - 2),
-      );
-      final double dropWidth = math.min(
-        dropHeight * 0.86,
-        math.min(itemWidth - 12, 44.0),
-      );
+      // iOS 的做法不是简单地把「图标 + 文字」当一个盒子居中，
+      // 而是**图标偏上、文字偏下** —— 因为水滴玻璃珠抬起时会往上飞，
+      // 视觉重心需要往上留一点余量。
+      final double stackHeight = dropHeight + labelBlock;
+      // 10.5pt 的字在 1.1 行高里偏下，整组要再往上提一点点，
+      // 否则文字会贴住胶囊底边。
+      final double stackTop =
+          (height - stackHeight) / 2 - _dockVisualNudge;
 
       // 把每个 tab 的中心 x 交给运动模型 —— 拖动擦洗要靠它算最近目标。
       //
@@ -1081,9 +1261,12 @@ class _CapsuleContent extends StatelessWidget {
             //
             // 位置由运动模型给出（飞行中会连续变化），
             // 形状由 stretch 给出（飞行中纵向拉长、落位时压扁）。
+            //
+            // 垂直位置与标签行对齐：透镜罩住的是**图标槽**，
+            // 标签在它下面 —— 这正是 iOS 的形态。
             Positioned(
               left: motion.x - dropWidth / 2,
-              top: (height - dropHeight - labelHeight - labelGap) / 2,
+              top: stackTop,
               width: dropWidth,
               height: dropHeight,
               child: AnimatedBuilder(
@@ -1102,54 +1285,110 @@ class _CapsuleContent extends StatelessWidget {
                 child: _DropContent(
                   section: tabs[motion.index.clamp(0, tabs.length - 1)],
                   iconSize: iconSize,
-                  labelHeight: labelHeight,
-                  labelGap: labelGap,
-                  lensSize: lensSize,
-                ),              ),
+                ),
+              ),
             ),
 
+            // ---- 触点辉光 ----
+            //
+            // iOS 26 的 *"a soft glow spreads from where the finger touched"*：
+            // 一团柔光从手指按下的位置扩散开。
+            //
+            // 它画在**内容之下**（图标之上、玻璃表面之下），
+            // 所以光晕是从玻璃「里面」亮起来的，而不是浮在图标上面。
+            if (_touchPoint != null)
+              AnimatedBuilder(
+                animation: _press.controller,
+                builder: (BuildContext context, Widget? child) {
+                  final double glow =
+                      (_press.progress).clamp(0.0, 1.0);
+                  if (glow <= 0.01) return const SizedBox.shrink();
+                  return _TouchGlow(
+                    center: _touchPoint!,
+                    progress: glow,
+                  );
+                },
+              ),
+
             // ---- 标签组 ----
+            //
+            // 每个 tab 占满「胶囊宽度 ÷ tab 数」的一格，
+            // 整格都是触控区（`HitTestBehavior.opaque`），
+            // 高度是**整个胶囊高度**（62）——
+            // 所以不管屏幕多窄、标签多密，
+            // 可点区域的高度永远远大于 44pt 的下限。
+            //
+            // 横向宽度在极窄屏 + 多个 tab 时可能不足 44pt，
+            // 那时靠相邻 tab 的无缝拼接保证「点哪儿都是某个 tab」，
+            // 不留无法命中的死区。
             Row(
               children: List<Widget>.generate(tabs.length, (i) {
                 final section = tabs[i];
-                final bool selected = section == active;
+                final bool selected = section == widget.active;
                 return SizedBox(
                   width: itemWidth,
                   height: height,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => onSelect(section),
-                    child: Column(
-                      // 关键：min 让 Column 按内容高度收缩，不再占满父容器，
-                      // 也就不会因为「居中对齐 + 内容超高」把文字挤出图标。
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    onTapDown: (TapDownDetails details) =>
+                        _handleDown(i, details.localPosition),
+                    onTapUp: (TapUpDetails details) => _handleUp(),
+                    onTapCancel: () => _handleUp(),
+                    onTap: () => widget.onSelect(section),
+                    child: Stack(
                       children: <Widget>[
-                        SizedBox(
-                          height: lensSize,
+                        // 图标：垂直位置跟着上面的 stackTop 走，
+                        // 保证图标正好落在水滴（透镜）中心。
+                        Positioned(
+                          top: stackTop,
+                          left: 0,
+                          right: 0,
+                          height: dropHeight,
                           child: Center(
-                            child: Icon(
-                              selected ? section.selectedIcon : section.icon,
-                              size: iconSize,
-                              color: selected ? AppColors.pink : sub,
+                            child: AnimatedBuilder(
+                              animation: _press.controller,
+                              builder: (BuildContext context, Widget? child) {
+                                // 只有被按下的那个 tab 才回缩。
+                                final bool pressed = _pressedIndex == i;
+                                final double t = pressed
+                                    ? _press.progress.clamp(0.0, 1.0)
+                                    : 0.0;
+                                // 按下时缩到 0.88 —— 幅度要够明显，
+                                // 但不能缩到「点错了」的量级。
+                                final double scale = 1.0 - 0.12 * t;
+                                return Transform.scale(
+                                  scale: scale,
+                                  child: child,
+                                );
+                              },
+                              child: Icon(
+                                selected ? section.selectedIcon : section.icon,
+                                size: iconSize,
+                                color: selected ? AppColors.pink : sub,
+                              ),
                             ),
                           ),
                         ),
-                        if (!compact) ...<Widget>[
-                          SizedBox(height: labelGap),
-                          Text(
-                            section.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: AppFontSize.micro,
-                              height: 1.1,
-                              fontWeight:
-                                  selected ? FontWeight.w800 : FontWeight.w500,
-                              color: selected ? AppColors.pink : sub,
+                        // 文字标签：紧贴在图标槽下方。
+                        if (!compact)
+                          Positioned(
+                            top: stackTop + dropHeight + _dockLabelGap,
+                            left: 0,
+                            right: 0,
+                            child: Text(
+                              section.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: AppFontSize.micro,
+                                height: 1.1,
+                                fontWeight:
+                                    selected ? FontWeight.w800 : FontWeight.w500,
+                                color: selected ? AppColors.pink : sub,
+                              ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                   ),
@@ -1161,6 +1400,82 @@ class _CapsuleContent extends StatelessWidget {
       );
     });
   }
+}
+
+/// 触点柔光。
+///
+/// iOS 26 的 *"a soft glow spreads from where the finger touched"*：
+/// 一团柔光从手指按下的位置扩散开，随松手淡出。
+///
+/// 实现上是一个**径向渐变**：中心亮、边缘完全透明，
+/// 半径随按压进度略微扩张（扩散感），透明度随进度衰减。
+///
+/// 颜色取品牌粉的浅色调 —— 跟水滴玻璃珠的着色一致，
+/// 辉光与玻璃看起来才像同一块材质在发光。
+class _TouchGlow extends StatelessWidget {
+  const _TouchGlow({
+    required this.center,
+    required this.progress,
+  });
+
+  /// 辉光中心（相对胶囊左上角）。
+  final Offset center;
+
+  /// 按压进度 0~1。
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final double radius = 22.0 + 26.0 * progress;
+    return IgnorePointer(
+      child: CustomPaint(
+        painter: _TouchGlowPainter(
+          center: center,
+          radius: radius,
+          opacity: 0.30 * progress,
+        ),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _TouchGlowPainter extends CustomPainter {
+  const _TouchGlowPainter({
+    required this.center,
+    required this.radius,
+    required this.opacity,
+  });
+
+  final Offset center;
+  final double radius;
+  final double opacity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (opacity <= 0.001) return;
+    final Rect rect = Rect.fromCircle(center: center, radius: radius);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          center,
+          radius,
+          <Color>[
+            AppColors.pink.withOpacity(opacity),
+            AppColors.pink.withOpacity(opacity * 0.42),
+            AppColors.pink.withOpacity(0),
+          ],
+          <double>[0.0, 0.45, 1.0],
+        ),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TouchGlowPainter oldDelegate) =>
+      oldDelegate.center != center ||
+      oldDelegate.radius != radius ||
+      oldDelegate.opacity != opacity;
 }
 
 /// 水滴玻璃底下透出的那一组「图标 + 文字」。
@@ -1178,9 +1493,6 @@ class _DropContent extends StatelessWidget {
   const _DropContent({
     required this.section,
     required this.iconSize,
-    required this.labelHeight,
-    required this.labelGap,
-    required this.lensSize,
   });
 
   /// 玻璃里那一份标签的 key。
@@ -1191,9 +1503,6 @@ class _DropContent extends StatelessWidget {
 
   final AppSection section;
   final double iconSize;
-  final double labelHeight;
-  final double labelGap;
-  final double lensSize;
 
   @override
   Widget build(BuildContext context) {
@@ -1277,6 +1586,116 @@ class LiquidLens extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 玻璃内壁的**顶部镜面亮线**。
+///
+/// 这是让玻璃「浮」起来的关键细节。
+///
+/// 物理上：一块有厚度的玻璃，上边缘的内侧会形成一条**全反射亮线**
+/// （像光纤的包层）。iOS 的 Liquid Glass 把它做成了可见的一像素高光，
+/// 沿着形状的**内壁**走 —— 所以它不是一条横贯的直线，
+/// 而是贴着轮廓走的：两端随圆角收进去，中间一段平直。
+///
+/// 实现上不能直接描边整条路径（那会在底部也出现一条亮线），
+/// 所以这里只取路径的**上半段**来描。
+///
+/// 取上半段的方法：把路径按 y 方向切成两半，
+/// 只保留上边界那一部分 —— 具体做法是先用整条路径做描边，
+/// 再用一条「只保留顶部」的裁剪矩形切掉下半部分。
+class GlassTopHighlight extends StatelessWidget {
+  const GlassTopHighlight({
+    Key? key,
+    required this.shape,
+    required this.color,
+    this.width = 1.6,
+    this.inset = 1.2,
+  }) : super(key: key);
+
+  final Path Function(Rect rect) shape;
+
+  /// 亮线颜色。
+  final Color color;
+
+  /// 亮线宽度。
+  final double width;
+
+  /// 从轮廓向内缩进多少（亮线贴着内壁，不是压在轮廓上）。
+  final double inset;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: CustomPaint(
+        painter: _GlassTopHighlightPainter(
+          shape: shape,
+          color: color,
+          width: width,
+          inset: inset,
+        ),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _GlassTopHighlightPainter extends CustomPainter {
+  const _GlassTopHighlightPainter({
+    required this.shape,
+    required this.color,
+    required this.width,
+    required this.inset,
+  });
+
+  final Path Function(Rect rect) shape;
+  final Color color;
+  final double width;
+  final double inset;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (color.alpha == 0) return;
+    final Rect rect = Offset.zero & size;
+    final Path path = shape(rect);
+
+    // 只保留上半段：用一个随高度收缩的矩形做裁剪。
+    //
+    // 裁剪区域的高度取形状高度的 42% ——
+    // 略大于一半，保证两侧圆角里的亮线也能被切出来，
+    // 但不会漫到底边去。
+    final double band = size.height * 0.42;
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width, band));
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..color = color,
+    );
+    canvas.restore();
+
+    // 内壁的第二层：更淡更粗的一层，制造「光晕」。
+    if (inset > 0) {
+      canvas.save();
+      canvas.clipRect(Rect.fromLTWH(0, 0, size.width, band));
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = width * 3.4
+          ..color = color.withOpacity(color.opacity * 0.28)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0),
+      );
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _GlassTopHighlightPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.width != width ||
+      oldDelegate.inset != inset;
 }
 
 /// 沿玻璃上沿横向流动的镜面亮带（液态感的主要来源）。
