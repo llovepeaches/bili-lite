@@ -688,16 +688,35 @@ class _CapsuleContent extends StatelessWidget {
   final ValueChanged<AppSection> onSelect;
   final double height;
 
+  /// 文字标签的预留高度（字号 10.5、行高 1.1）。
+  static const double _labelHeight = 12.0;
+
+  /// 图标与标签之间的间距。
+  static const double _labelGap = 3.0;
+
   @override
   Widget build(BuildContext context) {
-    final sub = context.subTextColor;
+    final sub = AppTextColor.tertiary(context);
     if (tabs.isEmpty) return SizedBox(height: height);
 
     final int activeIndex = active == null ? -1 : tabs.indexOf(active!);
 
     return LayoutBuilder(builder: (context, constraints) {
       final double itemWidth = constraints.maxWidth / tabs.length;
-      final double lensSize = math.min(itemWidth - 12, 44.0);
+      // 透镜尺寸跟着可用宽度走，但要留出上下空间给图标 + 文字标签。
+      //
+      // 上一版这里固定 `min(itemWidth - 12, 44)`，忽略了「图标 + 标签」需要
+      // 竖向空间：当底栏被右侧圆形按钮挤窄时，itemWidth 变小，透镜跟着变小，
+      // 但图标仍是硬编码的 22px —— 两者一旦对不齐，图标就会溢出透镜，
+      // 再叠加 Column 溢出，图标和文字就叠在一起了
+      // （见 `docs/preview/50-r7-home.png` 底部首页/搜索/空间那一排）。
+      //
+      // 现在把三者的尺寸绑定在一起算：透镜 = 图标 + 内边距，
+      // 图标随透镜等比缩放，且保证「透镜 + 标签」的总高不超过可用高度。
+      final double available = height - _labelHeight - _labelGap;
+      final double lensSize =
+          math.min(math.min(itemWidth - 8, 44.0), math.max(24.0, available));
+      final double iconSize = (lensSize * 0.52).clamp(16.0, 24.0);
 
       return SizedBox(
         height: height,
@@ -709,7 +728,7 @@ class _CapsuleContent extends StatelessWidget {
                 duration: const Duration(milliseconds: 360),
                 curve: Curves.easeOutCubic,
                 left: activeIndex * itemWidth + (itemWidth - lensSize) / 2,
-                top: 0,
+                top: (height - lensSize - _labelHeight - _labelGap) / 2,
                 width: lensSize,
                 height: lensSize,
                 child: LiquidLens(size: lensSize),
@@ -722,24 +741,31 @@ class _CapsuleContent extends StatelessWidget {
                   width: itemWidth,
                   height: height,
                   child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => onSelect(section),
                     child: Column(
+                      // 关键：min 让 Column 按内容高度收缩，不再占满父容器，
+                      // 也就不会因为「居中对齐 + 内容超高」把文字挤出图标。
+                      mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: <Widget>[
                         SizedBox(
                           height: lensSize,
-                          child: Icon(
-                            selected ? section.selectedIcon : section.icon,
-                            size: 22,
-                            color: selected ? AppColors.pink : sub,
+                          child: Center(
+                            child: Icon(
+                              selected ? section.selectedIcon : section.icon,
+                              size: iconSize,
+                              color: selected ? AppColors.pink : sub,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 3),
+                        SizedBox(height: _labelGap),
                         Text(
                           section.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 10.5,
+                            fontSize: AppFontSize.micro,
                             height: 1.1,
                             fontWeight:
                                 selected ? FontWeight.w800 : FontWeight.w500,

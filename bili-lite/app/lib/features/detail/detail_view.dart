@@ -12,6 +12,7 @@ import '../../state/globals.dart';
 import '../../state/library_state.dart';
 import '../../widgets/cover_image.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/glass_text.dart';
 import '../../widgets/segmented_switch.dart';
 import '../../widgets/state_views.dart';
 import '../account/login_gate.dart';
@@ -154,25 +155,31 @@ class _VideoDetailViewState extends State<VideoDetailView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         // 标题
-        Text(
+        GlassText(
           v.title.isEmpty ? '（无标题）' : v.title,
-          style: const TextStyle(
-              fontSize: 18, height: 1.4, fontWeight: FontWeight.w700),
+          style: AppTextStyles.detailTitle(context),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
 
         // 统计行
-        Wrap(
-          spacing: 16,
-          runSpacing: 8,
+        //
+        // 上一版把 7 个指标（播放/弹幕/评论/点赞/投币/收藏/分享）平铺成
+        // 同一行、同样式、同字号，结果是**没有一个指标能被优先看到** ——
+        // 扫读时眼睛要在 7 个同权重数字之间平移。
+        //
+        // 现在按「内容指标 / 互动指标」分两层：
+        //   * 内容指标（播放 / 弹幕 / 评论）—— 描述这个视频有多少人看，
+        //     放在上面，字号更大、颜色更实；
+        //   * 互动指标（点赞 / 投币 / 收藏 / 分享）—— 描述观众的反应，
+        //     由下方的互动栏承担（有图标 + 可点击 + 状态反馈），
+        //     这里不再重复，避免同一组数字出现两次。
+        Row(
           children: <Widget>[
             _Stat(Icons.play_circle_outline, v.stat.view, '播放'),
+            const SizedBox(width: AppSpacing.lg),
             _Stat(Icons.subtitles_outlined, v.stat.danmaku, '弹幕'),
+            const SizedBox(width: AppSpacing.lg),
             _Stat(Icons.mode_comment_outlined, v.stat.reply, '评论'),
-            _Stat(Icons.thumb_up_outlined, v.stat.like, '点赞'),
-            _Stat(Icons.monetization_on_outlined, v.stat.coin, '投币'),
-            _Stat(Icons.star_border_rounded, v.stat.favorite, '收藏'),
-            _Stat(Icons.share_outlined, v.stat.share, '分享'),
           ],
         ),
         const SizedBox(height: 10),
@@ -182,15 +189,15 @@ class _VideoDetailViewState extends State<VideoDetailView> {
         ],
         Row(
           children: <Widget>[
-            Icon(Icons.schedule_outlined, size: 13, color: sub),
+            Icon(Icons.schedule_outlined, size: 13, color: AppTextColor.tertiary(context)),
             const SizedBox(width: 4),
             Text(Fmt.relative(v.pubdate),
-                style: TextStyle(fontSize: 12, color: sub)),
+                style: AppTextStyles.caption(context)),
             if (v.tname.isNotEmpty) ...<Widget>[
               const SizedBox(width: 12),
-              Icon(Icons.category_outlined, size: 13, color: sub),
+              Icon(Icons.category_outlined, size: 13, color: AppTextColor.tertiary(context)),
               const SizedBox(width: 4),
-              Text(v.tname, style: TextStyle(fontSize: 12, color: sub)),
+              Text(v.tname, style: AppTextStyles.caption(context)),
             ],
             const Spacer(),
             SourceBadge(source: _controller.source),
@@ -547,8 +554,12 @@ class _ToolButton extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Container(
+          // 命中区做到 40×40（接近 44 的无障碍下限），图标仍是 19。
+          // 上一版是 `horizontal: 6, vertical: 4`，实际热区只有 31×27，
+          // 在触屏上很难点准 —— 顶栏挤了 4 个这种按钮，误触率很高。
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          alignment: Alignment.center,
           child: Icon(
             icon,
             size: 19,
@@ -761,6 +772,11 @@ class _DescriptionCard extends StatelessWidget {
   }
 }
 
+/// 单个统计指标：图标 + 数值。
+///
+/// 上一版数值是 11.5 的灰字，和页面里其它说明文字完全一样重，
+/// 于是「123.8万播放」这种最该被先看到的信息反而最不显眼。
+/// 现在数值提到二级文字色、字号到 13，让内容指标比辅助说明更突出。
 class _Stat extends StatelessWidget {
   const _Stat(this.icon, this.value, this.label);
 
@@ -770,15 +786,21 @@ class _Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sub = context.subTextColor;
     return Tooltip(
       message: label,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 14, color: sub),
-          const SizedBox(width: 3),
-          Text(Fmt.compact(value), style: TextStyle(fontSize: 11.5, color: sub)),
+          Icon(icon, size: 14, color: AppTextColor.tertiary(context)),
+          const SizedBox(width: 4),
+          Text(
+            Fmt.compact(value),
+            style: TextStyle(
+              fontSize: AppFontSize.body,
+              fontWeight: FontWeight.w600,
+              color: AppTextColor.secondary(context),
+            ),
+          ),
         ],
       ),
     );

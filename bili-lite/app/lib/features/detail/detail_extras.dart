@@ -22,7 +22,7 @@ class BvBadge extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: () => _copy(context, bvid, '已复制 BV 号'),
       child: GlassPill(
-        radius: 8,
+        radius: AppRadius.chip,
         tint: AppColors.pink.withOpacity(0.12),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
         child: Row(
@@ -32,11 +32,14 @@ class BvBadge extends StatelessWidget {
             const SizedBox(width: 5),
             Text(
               bvid,
-              style: TextStyle(
-                  fontSize: 11,
+              // 上一版给了 `letterSpacing: 0.3` + `w700`，BV 号这种
+              // 大写字母 + 数字混排的内容被拉开字距后，看着像等宽字体，
+              // 跟全 App 的无衬线正文不搭。这里去掉字距，只靠字号和
+              // 颜色区分它是「可点的东西」。
+              style: const TextStyle(
+                  fontSize: AppFontSize.caption,
                   color: AppColors.pink,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3),
+                  fontWeight: FontWeight.w600),
             ),
             const SizedBox(width: 5),
             Icon(Icons.copy_all_rounded,

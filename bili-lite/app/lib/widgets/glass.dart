@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../core/glass_theme.dart';
 import '../core/theme.dart';
+import '../core/tokens.dart';
 import 'glass_sample.dart';
 
 /// 动态极光背景：漂移的彩色光晕 + 斜向色带 + 掠光。
@@ -396,7 +397,7 @@ class GlassPanel extends StatelessWidget {
   const GlassPanel({
     Key? key,
     required this.child,
-    this.radius = 22,
+    this.radius = AppRadius.panel,
     this.padding = const EdgeInsets.all(16),
     this.tint,
     this.blur,
@@ -874,7 +875,7 @@ class GlassChip extends StatelessWidget {
                 label,
                 style: labelStyle ??
                     TextStyle(
-                      fontSize: 12.5,
+                      fontSize: AppFontSize.label,
                       color: labelColor,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     ),
@@ -1099,9 +1100,7 @@ class GlassDecorations {
           : const Color(0xFFC4356B);
 
   static Color tabUnselectedLabelColor(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark
-          ? AppColors.darkSub
-          : const Color(0xFF5C6270);
+      AppTextColor.tertiary(context);
 
   static EdgeInsets get tabIndicatorPadding =>
       const EdgeInsets.symmetric(horizontal: -14, vertical: 9);
