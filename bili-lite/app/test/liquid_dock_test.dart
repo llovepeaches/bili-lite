@@ -13,6 +13,15 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
+  /// 定位**标签行**里的文字标签。
+  ///
+  /// 水滴玻璃只罩住图标，文字标签始终在标签行里，所以每个标签唯一；
+  /// 这里仍限定在 `LiquidGlassDock` 之内，避免误命中页面上的同名文字。
+  Finder tabLabel(String text) => find.descendant(
+        of: find.byType(LiquidGlassDock),
+        matching: find.text(text),
+      ).first;
+
   group('SwipeDeck', () {
     testWidgets('左滑切到下一页并回调新下标', (tester) async {
       final changes = <int>[];
@@ -216,6 +225,9 @@ void main() {
       ));
 
       // 胶囊里有标签组的三项。
+      //
+      // 水滴玻璃**只罩图标**，文字标签留在标签行里，
+      // 所以每个标签在整个底栏里只出现一次。
       expect(find.text('首页'), findsOneWidget);
       expect(find.text('我的'), findsOneWidget);
       expect(find.text('设置'), findsOneWidget);
@@ -278,7 +290,7 @@ void main() {
         ),
       ));
 
-      final capsule = tester.getRect(find.text('首页'));
+      final capsule = tester.getRect(tabLabel('首页'));
       final button = tester.getRect(find.byIcon(AppSection.search.icon));
       expect(button.left, greaterThan(capsule.right));
     });

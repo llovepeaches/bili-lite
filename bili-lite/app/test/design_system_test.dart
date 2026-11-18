@@ -255,7 +255,14 @@ void main() {
           of: find.byType(LiquidGlassDock),
           matching: find.byIcon(iconData),
         );
-        final Finder text = find.text(section.label);
+        // 水滴玻璃只罩住图标，文字标签始终在标签行里（唯一一份）。
+        // 这里只关心**标签行**里的那个。
+        final Finder text = find
+            .descendant(
+              of: find.byType(LiquidGlassDock),
+              matching: find.text(section.label),
+            )
+            .first;
         expect(icon, findsWidgets, reason: '应找到 ${section.label} 的图标');
         expect(text, findsOneWidget, reason: '应找到 ${section.label} 的文字标签');
 

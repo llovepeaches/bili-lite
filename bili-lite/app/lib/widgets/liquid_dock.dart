@@ -8,6 +8,8 @@ import '../core/glass_theme.dart';
 import '../core/nav_section.dart';
 import '../core/theme.dart';
 import '../core/tokens.dart';
+import 'glass_drop.dart';
+import 'glass_drop_motion.dart';
 import 'glass_press.dart';
 import 'glass_sample.dart';
 
@@ -50,6 +52,7 @@ class LiquidGlassDock extends StatelessWidget {
     required this.onSelect,
     this.capsuleHeight = 62,
     this.buttonSize = 58,
+    this.compact = false,
   }) : super(key: key);
 
   /// 胶囊内的标签组（可排序）。
@@ -69,10 +72,29 @@ class LiquidGlassDock extends StatelessWidget {
   /// 独立圆形按钮直径。
   final double buttonSize;
 
+  /// compact 模式：标签收起、底栏变矮。
+  ///
+  /// 对齐 iOS 26 的 `.tabBarMinimizeBehavior(.onScrollDown)` ——
+  /// 向下滚动内容时底栏收起，把屏幕空间还给内容。
+  final bool compact;
+
+  /// 玻璃里那一份「折射像」标签的 key。
+  ///
+  /// 底栏上每个 tab 的文字会出现两次：一次在标签行里（真正可交互的那个），
+  /// 一次在水滴玻璃底下（折射像，只是视觉）。
+  /// 测试要精确定位标签行里的那个时，用这个 key 排除折射像。
+  static Key get dropLabelKey => _DropContent.labelKey;
+
   @override
   Widget build(BuildContext context) {
     final config = GlassTheme.of(context);
-    final double rowHeight = math.max(capsuleHeight, buttonSize);
+    // compact 模式：胶囊压矮，标签收起只留图标。
+    //
+    // iOS 26 的 `.tabBarMinimizeBehavior(.onScrollDown)` 就是这个效果 ——
+    // 底栏缩到只剩一排图标，把纵向空间还给内容。
+    final double capsuleH = compact ? capsuleHeight * 0.78 : capsuleHeight;
+    final double button = compact ? buttonSize * 0.86 : buttonSize;
+    final double rowHeight = math.max(capsuleH, button);
 
     if (!config.enabled) {
       // 玻璃总开关关掉：退化成两片不透明卡片，但双件式结构保留。
@@ -83,8 +105,8 @@ class LiquidGlassDock extends StatelessWidget {
           standalone: standalone,
           active: active,
           onSelect: onSelect,
-          capsuleHeight: capsuleHeight,
-          buttonSize: buttonSize,
+          capsuleHeight: capsuleH,
+          buttonSize: button,
         ),
       );
     }
@@ -98,10 +120,11 @@ class LiquidGlassDock extends StatelessWidget {
             standalone: standalone,
             active: active,
             onSelect: onSelect,
-            capsuleHeight: capsuleHeight,
-            buttonSize: buttonSize,
+            capsuleHeight: capsuleH,
+            buttonSize: button,
             width: constraints.maxWidth,
             rowHeight: rowHeight,
+            compact: compact,
           );
         },
       ),
@@ -143,7 +166,7 @@ class _PlainDock extends StatelessWidget {
               borderRadius: BorderRadius.circular(capsuleHeight / 2),
               border: Border.all(color: p.plainBorder),
             ),
-            child: _CapsuleContent(
+            child: _PlainCapsuleContent(
               tabs: tabs,
               active: active,
               onSelect: onSelect,
@@ -192,6 +215,7 @@ class _GlassDock extends StatefulWidget {
     required this.buttonSize,
     required this.width,
     required this.rowHeight,
+    this.compact = false,
   });
 
   final List<AppSection> tabs;
@@ -203,6 +227,9 @@ class _GlassDock extends StatefulWidget {
   final double width;
   final double rowHeight;
 
+  /// compact 模式：标签收起，底栏变矮（滚动时用）。
+  final bool compact;
+
   /// 两件玻璃之间的间隙。
   static const double _gap = 10;
 
@@ -210,16 +237,61 @@ class _GlassDock extends StatefulWidget {
   State<_GlassDock> createState() => _GlassDockState();
 }
 
-class _GlassDockState extends State<_GlassDock> with SingleTickerProviderStateMixin {
+/// 注意用 [TickerProviderStateMixin] 而不是 `SingleTickerProviderStateMixin`：
+/// 这个 State 里有两个 ticker 源 —— 圆形玻璃的按压弹簧 [GlassPress] 一个，
+/// 水滴透镜的 [GlassDropMotion] 内部还有抬起/飞行两个控制器。
+class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
   /// 画布四周留出的余量：按压放大时圆形玻璃的溢出部分仍留在画布里。
   static const double _pad = 14;
 
   /// 圆形玻璃按压时的弹簧回弹。
   late final GlassPress _press = GlassPress(vsync: this);
 
+  /// 水滴透镜的运动模型（抬起 / 飞行 / 拉伸 / 擦洗）。
+  late final GlassDropMotion _drop = GlassDropMotion(vsync: this);
+
+  /// 拖动擦洗：按下时的 x。
+  double _dragStartX = 0;
+
+  /// 拖动擦洗：按下时水滴所在的位置（拖动是相对位移，不是绝对定位）。
+  double _dragOriginX = 0;
+
+  /// 当前是否处于「正在擦洗」状态。
+  bool _dragging = false;
+
+  /// 超过这个位移（逻辑像素）才算擦洗，否则算点击。
+  static const double _scrubThreshold = 6;
+
+  /// 擦洗是否启用（只有一个 tab 时没什么可擦的）。
+  bool get _scrubEnabled => widget.tabs.length > 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncDropToActive();
+  }
+
+  @override
+  void didUpdateWidget(covariant _GlassDock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 选中项变了 → 水滴飞过去。
+    if (oldWidget.active != widget.active) {
+      _syncDropToActive();
+    }
+  }
+
+  /// 把水滴对齐到当前选中的 tab。
+  void _syncDropToActive() {
+    final List<AppSection> tabs = widget.tabs;
+    if (tabs.isEmpty) return;
+    final int index = widget.active == null ? 0 : tabs.indexOf(widget.active!);
+    _drop.travelTo(index < 0 ? 0 : index);
+  }
+
   @override
   void dispose() {
     _press.dispose();
+    _drop.dispose();
     super.dispose();
   }
 
@@ -228,7 +300,7 @@ class _GlassDockState extends State<_GlassDock> with SingleTickerProviderStateMi
     // 弹簧每帧都变，几何（放大的圆形、并集裁剪路径）要跟着重算，
     // 所以整块底栏挂在 AnimatedBuilder 上。
     return AnimatedBuilder(
-      animation: _press.controller,
+      animation: Listenable.merge(<Listenable>[_press.controller, _drop]),
       builder: (BuildContext context, Widget? child) =>
           _buildDock(context, _press.progress),
     );
@@ -294,9 +366,18 @@ class _GlassDockState extends State<_GlassDock> with SingleTickerProviderStateMi
     final Widget capsuleSurface = _GlassSurface(
       circle: false,
       gradient: _surfaceGradient(dark, sampled: true),
-      hue: config.hue,
-      hueAlpha: config.hueAlpha,
-      hueMix: config.hueMix,
+      // 底栏**不染色相**。
+      //
+      // 页面里的玻璃卡片用冷蓝 Hue 染色是为了让玻璃「像一块有色的实体」，
+      // 但系统底栏不行：iOS 的 tab bar 在浅色模式是**纯乳白**、
+      // 深色模式是**中性烟熏灰**，两者都不偏色相。
+      //
+      // 关键在于 `BlendMode.hue` 取的是**源**的色相 —— 拿饱和蓝
+      // `#0088FF` 去混一块近白的乳白基底，结果是把白压成冷灰蓝，
+      // 底栏于是「看着发暗」。去掉这一层，乳白才真的是乳白。
+      hue: null,
+      hueAlpha: 0,
+      hueMix: 0,
       flow: capsuleFlow,
     );
 
@@ -305,6 +386,56 @@ class _GlassDockState extends State<_GlassDock> with SingleTickerProviderStateMi
       active: widget.active,
       onSelect: widget.onSelect,
       height: widget.capsuleHeight,
+      motion: _drop,
+      compact: widget.compact,
+    );
+
+    // ---- 拖动擦洗 ----
+    //
+    // iOS 26 允许**按住沿底栏拖动**，水滴跟手移动，松手落到最近的那个 tab。
+    // 这里用 `Listener` 而不是 `GestureDetector`：
+    // `GestureDetector` 的 onPanStart 会和子级 Icon 的 onTap 抢手势，
+    // 而 `Listener` 在原始指针事件层面工作，能保证「拖动优先、点击其次」。
+    //
+    // 判定阈值 6px：小于它算点击（交给子级的 onTap），大于它算擦洗。
+    final Widget scrubbableCapsule = Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (PointerDownEvent e) {
+        _dragStartX = e.localPosition.dx;
+        _dragOriginX = _drop.x;
+        _dragging = false;
+      },
+      onPointerMove: (PointerMoveEvent e) {
+        if (!_scrubEnabled) return;
+        if (!_dragging) {
+          if ((e.localPosition.dx - _dragStartX).abs() < _scrubThreshold) {
+            return;
+          }
+          _dragging = true;
+          _drop.pressLift();
+        }
+        // 把位移换算成胶囊内的局部坐标，交给水滴跟手。
+        _drop.scrubTo(_dragOriginX + (e.localPosition.dx - _dragStartX));
+      },
+      onPointerUp: (PointerUpEvent e) {
+        if (_dragging) {
+          _dragging = false;
+          // 松手：落到最近的 tab，并通知外层切换。
+          _drop.scrubRelease();
+          final int idx = _drop.index;
+          if (idx >= 0 && idx < widget.tabs.length) {
+            final AppSection section = widget.tabs[idx];
+            if (section != widget.active) widget.onSelect(section);
+          }
+        }
+      },
+      onPointerCancel: (PointerCancelEvent e) {
+        if (_dragging) {
+          _dragging = false;
+          _drop.scrubRelease();
+        }
+      },
+      child: capsuleContent,
     );
 
     // ---- 圆形按钮的表面层与内容 ----
@@ -323,9 +454,10 @@ class _GlassDockState extends State<_GlassDock> with SingleTickerProviderStateMi
       final Widget circleSurface = _GlassSurface(
         circle: true,
         gradient: _surfaceGradient(dark, sampled: true),
-        hue: config.hue,
-        hueAlpha: config.hueAlpha,
-        hueMix: config.hueMix,
+        // 同胶囊：不染色相，保持中性乳白 / 烟熏灰。
+        hue: null,
+        hueAlpha: 0,
+        hueMix: 0,
         flow: circleFlow,
       );
 
@@ -376,6 +508,8 @@ class _GlassDockState extends State<_GlassDock> with SingleTickerProviderStateMi
               size: 22,
               color: selected ? AppColors.pink : sub,
             ),
+            // Liquid Glass v2 的暗边。
+            const Positioned.fill(child: _DarkenedEdge(circle: true)),
           ],
         ),
       );
@@ -455,7 +589,9 @@ class _GlassDockState extends State<_GlassDock> with SingleTickerProviderStateMi
                   child: Stack(
                     children: <Widget>[
                       Positioned.fill(child: capsuleSurface),
-                      Positioned.fill(child: capsuleContent),
+                      Positioned.fill(child: scrubbableCapsule),
+                      // Liquid Glass v2 的暗边：压在最上面，把形状「勒」出来。
+                      Positioned.fill(child: const _DarkenedEdge(circle: false)),
                     ],
                   ),
                 ),
@@ -474,22 +610,47 @@ class _GlassDockState extends State<_GlassDock> with SingleTickerProviderStateMi
   }
 }
 
-/// 玻璃表面层的渐变（顶部亮、底部略暗，模拟厚玻璃受光）。
+/// 玻璃表面层的渐变。
+///
+/// iOS 26/27 的底栏玻璃有两种材质（Apple 内部叫 *milky* 与 *smoked*）：
+///
+/// * **浅色模式 = milky（乳白玻璃）**：一层**不透明偏白**的基底，
+///   底下内容只透出模糊后的色块，透不透得过去不重要 ——
+///   重要的是它看起来像一块**磨砂的牛奶玻璃**，而不是一块透明塑料片。
+/// * **深色模式 = smoked（烟熏玻璃）**：一层**偏黑**的基底，
+///   底下内容同样只透出模糊色块。
+///
+/// 这跟「通透档」的思路是反的：通透档追求「内部近乎全透，玻璃只由边缘定义形状」，
+/// 而 iOS 的系统底栏恰恰是**先保证可读性**（内容不透过去），
+/// 再用折射和边缘高光表现玻璃感。
+///
+/// 底栏是**系统级 chrome**，内容要从它下面穿过去 —— 这时「可读」优先于「通透」。
+/// 所以这里给底栏单独一套材质，不跟页面里的玻璃卡片共用。
 Gradient _surfaceGradient(bool dark, {required bool sampled}) {
+  if (dark) {
+    // smoked：偏黑的基底 + 一点点顶部受光。
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: <Color>[
+        const Color(0xFF32323A).withOpacity(sampled ? 0.70 : 0.86),
+        const Color(0xFF232329).withOpacity(sampled ? 0.76 : 0.92),
+        const Color(0xFF2A2A31).withOpacity(sampled ? 0.68 : 0.84),
+      ],
+    );
+  }
+  // milky：乳白基底 + 顶部更亮（受光面）。
+  //
+  // 不透明度给得很高（0.90~0.96）——「乳白」的意思本来就是**不透明**，
+  // 底下只透出模糊后的浅色块，而不是让页面内容整片透上来。
   return LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: dark
-        ? <Color>[
-            Colors.white.withOpacity(sampled ? 0.10 : 0.13),
-            Colors.white.withOpacity(sampled ? 0.04 : 0.05),
-            Colors.white.withOpacity(sampled ? 0.07 : 0.08),
-          ]
-        : <Color>[
-            Colors.white.withOpacity(sampled ? 0.34 : 0.72),
-            Colors.white.withOpacity(sampled ? 0.16 : 0.44),
-            Colors.white.withOpacity(sampled ? 0.26 : 0.58),
-          ],
+    colors: <Color>[
+      const Color(0xFFFFFFFF).withOpacity(sampled ? 0.92 : 0.97),
+      const Color(0xFFF6F7FA).withOpacity(sampled ? 0.90 : 0.95),
+      const Color(0xFFFBFBFD).withOpacity(sampled ? 0.90 : 0.96),
+    ],
   );
 }
 
@@ -661,6 +822,48 @@ class _ShadowBox extends StatelessWidget {
   }
 }
 
+/// Liquid Glass v2 的「暗边」。
+///
+/// iOS 27 给玻璃加了一圈**变暗的边缘**（*darkened edge*），
+/// 配合更亮的镜面高光，玻璃才有立体感 —— 否则它只是一张半透明的色片。
+///
+/// 实现上用**内阴影**：从形状内侧往里压一圈黑，宽度很窄。
+///
+/// 浅色模式下的强度刻意压得很低 —— 乳白玻璃的边缘本来就很淡，
+/// 暗边一重就变成了一圈灰线，看着像描边而不是玻璃。
+class _DarkenedEdge extends StatelessWidget {
+  const _DarkenedEdge({required this.circle});
+
+  final bool circle;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = GlassPalette.of(context);
+    final dark = p.dark;
+
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: circle ? BoxShape.circle : BoxShape.rectangle,
+          borderRadius: circle ? null : BorderRadius.circular(1000),
+          border: Border.all(
+            color: Colors.black.withOpacity(dark ? 0.34 : 0.10),
+            width: 1.4,
+          ),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withOpacity(dark ? 0.26 : 0.07),
+              blurRadius: 4,
+              spreadRadius: -2,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// 把共享采样层裁成「胶囊 ∪ 圆形」。
 class _UnionClipper extends CustomClipper<Path> {
   const _UnionClipper(this.path);
@@ -674,9 +877,12 @@ class _UnionClipper extends CustomClipper<Path> {
   bool shouldReclip(covariant _UnionClipper oldClipper) => true;
 }
 
-/// 胶囊内部：透镜指示器 + 图标文字。
-class _CapsuleContent extends StatelessWidget {
-  const _CapsuleContent({
+/// 玻璃总开关关闭时的胶囊内容：只有图标 + 文字，没有水滴透镜。
+///
+/// 玻璃材质关掉时再放一颗「水滴」是自相矛盾的 —— 水滴本身就是玻璃，
+/// 没有玻璃就不该有水滴。所以这里退回到最朴素的选中态：一个半透明圆角块。
+class _PlainCapsuleContent extends StatelessWidget {
+  const _PlainCapsuleContent({
     required this.tabs,
     required this.active,
     required this.onSelect,
@@ -688,6 +894,119 @@ class _CapsuleContent extends StatelessWidget {
   final ValueChanged<AppSection> onSelect;
   final double height;
 
+  @override
+  Widget build(BuildContext context) {
+    final sub = AppTextColor.tertiary(context);
+    if (tabs.isEmpty) return SizedBox(height: height);
+
+    final int activeIndex = active == null ? -1 : tabs.indexOf(active!);
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final double itemWidth = constraints.maxWidth / tabs.length;
+      final double lensSize =
+          math.min(math.min(itemWidth - 8, 44.0), height - 15);
+
+      return SizedBox(
+        height: height,
+        child: Stack(
+          children: <Widget>[
+            if (activeIndex >= 0)
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                left: activeIndex * itemWidth + (itemWidth - lensSize) / 2,
+                top: (height - lensSize - 15) / 2,
+                width: lensSize,
+                height: lensSize,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(lensSize * 0.42),
+                    color: AppColors.pink.withOpacity(0.16),
+                  ),
+                ),
+              ),
+            Row(
+              children: List<Widget>.generate(tabs.length, (i) {
+                final section = tabs[i];
+                final bool selected = section == active;
+                return SizedBox(
+                  width: itemWidth,
+                  height: height,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onSelect(section),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        SizedBox(
+                          height: lensSize,
+                          child: Center(
+                            child: Icon(
+                              selected ? section.selectedIcon : section.icon,
+                              size: (lensSize * 0.52).clamp(16.0, 24.0),
+                              color: selected ? AppColors.pink : sub,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          section.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: AppFontSize.micro,
+                            height: 1.1,
+                            fontWeight:
+                                selected ? FontWeight.w800 : FontWeight.w500,
+                            color: selected ? AppColors.pink : sub,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+}
+
+/// 胶囊内部：iOS 式水滴透镜 + 图标文字。
+///
+/// 这一版把旧版的「粉色圆角方块指示器」换成了 iOS 26/27 的**玻璃水滴**：
+///
+/// * 水滴按下时**抬起**（底盘淡出、变成通透的玻璃珠）；
+/// * 飞行时按距离**拉伸**，落位时**压扁**再回弹；
+/// * 玻璃下面的图标和文字被**放大**（折射效果，不是选中态变大）；
+/// * 按住沿底栏**拖动**可以擦洗水滴，松手落到最近的 tab。
+///
+/// 运动参数都在 [GlassDropMotion] 里，这里只负责把状态映射成几何。
+class _CapsuleContent extends StatelessWidget {
+  const _CapsuleContent({
+    required this.tabs,
+    required this.active,
+    required this.onSelect,
+    required this.height,
+    required this.motion,
+    required this.compact,
+  });
+
+  final List<AppSection> tabs;
+  final AppSection? active;
+  final ValueChanged<AppSection> onSelect;
+  final double height;
+
+  /// 水滴运动模型。
+  final GlassDropMotion motion;
+
+  /// compact 模式：标签收起，只留图标（iOS 26 的
+  /// `.tabBarMinimizeBehavior(.onScrollDown)`）。
+  final bool compact;
+
   /// 文字标签的预留高度（字号 10.5、行高 1.1）。
   static const double _labelHeight = 12.0;
 
@@ -698,8 +1017,6 @@ class _CapsuleContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final sub = AppTextColor.tertiary(context);
     if (tabs.isEmpty) return SizedBox(height: height);
-
-    final int activeIndex = active == null ? -1 : tabs.indexOf(active!);
 
     return LayoutBuilder(builder: (context, constraints) {
       final double itemWidth = constraints.maxWidth / tabs.length;
@@ -718,21 +1035,80 @@ class _CapsuleContent extends StatelessWidget {
           math.min(math.min(itemWidth - 8, 44.0), math.max(24.0, available));
       final double iconSize = (lensSize * 0.52).clamp(16.0, 24.0);
 
+      // compact 模式：标签淡出后，透镜可以占更多高度。
+      final double labelHeight = compact ? 0 : _labelHeight;
+      final double labelGap = compact ? 0 : _labelGap;
+
+      // 水滴的尺寸：**只罩住图标**，不罩住文字标签。
+      //
+      // 这是 iOS 的做法 —— 玻璃「水滴」是一颗落在图标上的珠子，
+      // 文字标签在珠子**下面**，被染色成选中色但不被玻璃罩住。
+      //
+      // 形状是**竖着的胶囊**（高 > 宽），读起来才像「一滴水」；
+      // 正圆读起来像「一个圆按钮」。
+      //
+      // 尺寸围绕**图标**算，而不是围绕旧的 lensSize：
+      // 图标 22~24px，水滴 = 图标 + 上下各 7px 内边距 → 约 36×38。
+      //
+      // 关键约束：水滴底边必须**留出标签的空间**，
+      // 否则玻璃珠会压到文字上（第一版就是这个毛病：
+      // `dropHeight = lensSize + 8` 里 lensSize 最大 44，
+      // 水滴高 52 而底栏可用高度才 50，珠子直接盖住了「首页」两个字）。
+      final double dropHeight = math.min(
+        iconSize + 14,
+        math.max(28.0, height - labelHeight - labelGap - 2),
+      );
+      final double dropWidth = math.min(
+        dropHeight * 0.86,
+        math.min(itemWidth - 12, 44.0),
+      );
+
+      // 把每个 tab 的中心 x 交给运动模型 —— 拖动擦洗要靠它算最近目标。
+      //
+      // 注意这里必须**在 build 里更新**：胶囊宽度会随屏幕宽度变化，
+      // 缓存下来的中心坐标一旦过期，擦洗就会落到错误的 tab 上。
+      final List<double> centers = List<double>.generate(
+        tabs.length,
+        (int i) => i * itemWidth + itemWidth / 2,
+      );
+      motion.setCenters(centers);
+
       return SizedBox(
         height: height,
         child: Stack(
           children: <Widget>[
-            // 液态透镜：在图标位置滑动的圆角方块。
-            if (activeIndex >= 0)
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 360),
-                curve: Curves.easeOutCubic,
-                left: activeIndex * itemWidth + (itemWidth - lensSize) / 2,
-                top: (height - lensSize - _labelHeight - _labelGap) / 2,
-                width: lensSize,
-                height: lensSize,
-                child: LiquidLens(size: lensSize),
-              ),
+            // ---- 水滴透镜 ----
+            //
+            // 位置由运动模型给出（飞行中会连续变化），
+            // 形状由 stretch 给出（飞行中纵向拉长、落位时压扁）。
+            Positioned(
+              left: motion.x - dropWidth / 2,
+              top: (height - dropHeight - labelHeight - labelGap) / 2,
+              width: dropWidth,
+              height: dropHeight,
+              child: AnimatedBuilder(
+                animation: motion,
+                builder: (BuildContext context, Widget? child) {
+                  return LiquidGlassDrop(
+                    width: dropWidth,
+                    height: dropHeight,
+                    stretch: motion.stretch,
+                    lift: motion.lift,
+                    child: child!,
+                  );
+                },
+                // 水滴下面画的是「当前指着的那个 tab」的内容，
+                // 这样飞行途中玻璃里透出的图标也跟着换。
+                child: _DropContent(
+                  section: tabs[motion.index.clamp(0, tabs.length - 1)],
+                  iconSize: iconSize,
+                  labelHeight: labelHeight,
+                  labelGap: labelGap,
+                  lensSize: lensSize,
+                ),              ),
+            ),
+
+            // ---- 标签组 ----
             Row(
               children: List<Widget>.generate(tabs.length, (i) {
                 final section = tabs[i];
@@ -759,19 +1135,21 @@ class _CapsuleContent extends StatelessWidget {
                             ),
                           ),
                         ),
-                        SizedBox(height: _labelGap),
-                        Text(
-                          section.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: AppFontSize.micro,
-                            height: 1.1,
-                            fontWeight:
-                                selected ? FontWeight.w800 : FontWeight.w500,
-                            color: selected ? AppColors.pink : sub,
+                        if (!compact) ...<Widget>[
+                          SizedBox(height: labelGap),
+                          Text(
+                            section.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: AppFontSize.micro,
+                              height: 1.1,
+                              fontWeight:
+                                  selected ? FontWeight.w800 : FontWeight.w500,
+                              color: selected ? AppColors.pink : sub,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -782,6 +1160,50 @@ class _CapsuleContent extends StatelessWidget {
         ),
       );
     });
+  }
+}
+
+/// 水滴玻璃底下透出的那一组「图标 + 文字」。
+/// 放大由 [LiquidGlassDrop] 内部的 `Transform.scale` 负责，
+/// 这里只管把内容按正常尺寸摆好。
+///
+/// 这一份内容是**玻璃里的折射像**，不是独立的可交互元素 ——
+/// 真正的按钮在下面的标签行里。所以：
+///
+/// * 用 [ExcludeSemantics] 把它从无障碍树里摘掉，
+///   否则读屏会把这个标签念两遍（标签行一次，玻璃里的像一次）；
+/// * 用 [_DropContent.labelKey] 标记它，好让测试能精确定位
+///   **标签行**里的那个同名 Text（两者文字相同，但职责不同）。
+class _DropContent extends StatelessWidget {
+  const _DropContent({
+    required this.section,
+    required this.iconSize,
+    required this.labelHeight,
+    required this.labelGap,
+    required this.lensSize,
+  });
+
+  /// 玻璃里那一份标签的 key。
+  ///
+  /// 公开出来是为了让测试能区分「标签行里的标签」和「玻璃里的折射像」——
+  /// 两者文字一模一样，但只有前者是可交互的。
+  static const Key labelKey = Key('glass-drop-label');
+
+  final AppSection section;
+  final double iconSize;
+  final double labelHeight;
+  final double labelGap;
+  final double lensSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: Icon(
+        section.selectedIcon,
+        size: iconSize,
+        color: AppColors.pink,
+      ),
+    );
   }
 }
 

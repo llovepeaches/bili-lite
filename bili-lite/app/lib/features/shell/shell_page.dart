@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/glass_theme.dart';
+import 'dock_compact_policy.dart';
 import '../../core/nav_section.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
@@ -38,6 +39,12 @@ class _ShellPageState extends State<ShellPage> {
   /// 这样「高光跟手移动」和「真正切到了哪一页」是两件事。
   int? _previewIndex;
 
+  /// 底栏是否处于 compact 态（滚动收起后只留图标）。
+  bool _compact = false;
+
+  /// 滚动收起的方向判定（纯逻辑，抽出来是为了能单独测）。
+  static const DockCompactPolicy _compactPolicy = DockCompactPolicy();
+
   /// 视觉顺序：标签组在前，**独立入口固定在最右**。
   ///
   /// 底栏是双件式结构（胶囊 + 右侧独立圆形按钮），滑动的页序必须
@@ -67,11 +74,40 @@ class _ShellPageState extends State<ShellPage> {
     // 内容区跟着滑过去（SwipeDeck 受控于 [_active]），底栏只更新选中态。
   }
 
-  /// 内容区滚动时不做任何处理。
+  /// 内容区滚动时，底栏跟随收起 / 展开。
   ///
-  /// 底栏固定不动是这个需求的核心：以前这里会根据滚动方向收起底栏，
-  /// 现在改成始终常驻，滑动切页时也只有内容区在动。
-  bool _onScroll(UserScrollNotification notification) => false;
+  /// 对齐 iOS 26 的 `.tabBarMinimizeBehavior(.onScrollDown)`：
+  /// 向下滚动内容时底栏收起成 compact（标签淡出、只留图标），
+  /// 把屏幕空间还给内容；向上滚动时恢复。
+  ///
+  /// 注意这里和**横向**滑动切页是两件独立的事：
+  /// `SwipeDeck` 用的是 `onHorizontalDrag*`，只在内容区生效，
+  /// 底栏的收起只看竖直滚动方向，两者互不干扰。
+  ///
+  /// 为什么监听 [ScrollNotification] 而不是 [UserScrollNotification]：
+  ///
+  /// `UserScrollNotification` 只在**滚动方向发生变化**的那一刻派发一次
+  /// （Flutter 的 `updateUserScrollDirection` 里 `if (userScrollDirection == value) return;`），
+  /// 而且**鼠标滚轮**在 Linux 桌面上常常压根不派发它 ——
+  /// 实测：滚轮事件确实到达（`PointerScrollEvent.scrollDelta.dy = -53`），
+  /// 但 `UserScrollNotification` 一条都没有。
+  ///
+  /// `ScrollUpdateNotification` 则**每次**滚动都派发，
+  /// 且带 `scrollDelta`，用位移的正负就能判断方向 ——
+  /// 滚轮、拖拽、惯性 fling 一视同仁。
+  bool _onScroll(ScrollNotification notification) {
+    // 判定逻辑在 [DockCompactPolicy] 里（纯函数，可单独测）。
+    final bool? next = _compactPolicy.compactFor(notification);
+    if (next == null) return false;
+    _setCompact(next);
+    return false;
+  }
+
+  /// 设置 compact 态；值没变就不重建。
+  void _setCompact(bool value) {
+    if (_compact == value) return;
+    setState(() => _compact = value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +146,7 @@ class _ShellPageState extends State<ShellPage> {
                 onWillPop: _handleWillPop,
                 child: Scaffold(
                   extendBody: true,
-                  body: NotificationListener<UserScrollNotification>(
+                  body: NotificationListener<ScrollNotification>(
                     onNotification: _onScroll,
                     child: _deck(sections, stackKey, activeIndex),
                   ),
@@ -118,15 +154,22 @@ class _ShellPageState extends State<ShellPage> {
                     top: false,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                      // 底栏固定在 Scaffold 底部：内容区滑动时它完全不动，
-                      // 只有选中态（液态透镜的位置与颜色）跟随变化。
+                      // 底栏固定在 Scaffold 底部：内容区滑动时它只做
+                      // 「收起 / 展开」的纵向收缩，选中态（水滴透镜的
+                      // 位置与颜色）跟随变化。
                       //
                       // 双件式：左边胶囊装标签组，右边一枚独立圆形按钮装搜索。
-                      child: LiquidGlassDock(
-                        tabs: prefs.tabSections,
-                        standalone: prefs.standaloneSections,
-                        active: _dockSection,
-                        onSelect: _select,
+                      child: AnimatedSize(
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.bottomCenter,
+                        child: LiquidGlassDock(
+                          tabs: prefs.tabSections,
+                          standalone: prefs.standaloneSections,
+                          active: _dockSection,
+                          onSelect: _select,
+                          compact: _compact,
+                        ),
                       ),
                     ),
                   ),
