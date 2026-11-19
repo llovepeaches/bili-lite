@@ -25,8 +25,8 @@ class PlayerController extends ChangeNotifier {
     required String cid,
     this.quality = 64,
     BiliRepository? repository,
-  }) : _repo = repository ?? repo,
-       _cid = cid {
+  })  : _repo = repository ?? repo,
+        _cid = cid {
     _surface = createVideoSurface(
       onPosition: _handlePosition,
       onDuration: _handleDuration,
@@ -57,6 +57,8 @@ class PlayerController extends ChangeNotifier {
   bool _danmakuEnabled = true;
   double _danmakuOpacity = 0.9;
   double _danmakuFontScale = 1.0;
+  DanmakuArea _danmakuArea = DanmakuArea.full;
+  bool _fullscreen = false;
   String? _playError;
   String _qualityLabel = '';
   int _danmakuCount = 0;
@@ -95,6 +97,12 @@ class PlayerController extends ChangeNotifier {
   double get danmakuOpacity => _danmakuOpacity;
 
   double get danmakuFontScale => _danmakuFontScale;
+
+  DanmakuArea get danmakuArea => _danmakuArea;
+
+  /// 是否处于全屏横屏页。内嵌播放器据此撤下画面，避免 Web 端同一个
+  /// DOM 容器被两处 HtmlElementView 同时挂载。
+  bool get fullscreen => _fullscreen;
 
   DanmakuSource? get danmaku => _danmaku;
 
@@ -179,7 +187,14 @@ class PlayerController extends ChangeNotifier {
       final res = await _repo.danmaku(_cid);
       final list = res.data.list;
       _danmakuCount = list.length;
-      _danmaku = DanmakuSource(timeline: buildTimeline(list));
+      // 必须把当前显示参数带进新建的数据源：弹幕是异步加载的，
+      // 用户可能在它回来之前就调过字号 / 区域；不带上会被默认值覆盖。
+      _danmaku = DanmakuSource(
+        timeline: buildTimeline(list),
+        opacity: _danmakuOpacity,
+        fontScale: _danmakuFontScale,
+        area: _danmakuArea,
+      );
       _notify();
     } catch (_) {
       // 弹幕失败不影响播放，静默降级为「无弹幕」。
@@ -228,6 +243,24 @@ class PlayerController extends ChangeNotifier {
   void setDanmakuFontScale(double value) {
     _danmakuFontScale = value.clamp(0.6, 2.0);
     _danmaku?.fontScale = _danmakuFontScale;
+    _notify();
+  }
+
+  /// 设置弹幕显示区域（全屏 / 3/4 / 半屏 / 1/4）。
+  void setDanmakuArea(DanmakuArea area) {
+    _danmakuArea = area;
+    _danmaku?.area = area;
+    _notify();
+  }
+
+  /// 供分段控件直接按下标设置。
+  void setDanmakuAreaIndex(int index) =>
+      setDanmakuArea(danmakuAreaFromIndex(index));
+
+  /// 进入 / 退出全屏横屏页。视图据此决定谁来渲染 `surface.widget`。
+  void setFullscreen(bool value) {
+    if (_fullscreen == value) return;
+    _fullscreen = value;
     _notify();
   }
 

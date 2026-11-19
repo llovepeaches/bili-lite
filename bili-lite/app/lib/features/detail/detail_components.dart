@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/format.dart';
-import '../../core/navigation.dart';
 import '../../core/theme.dart';
 import '../../core/tokens.dart';
 import '../../data/models.dart';
@@ -53,8 +52,9 @@ class DetailToolGroup extends StatelessWidget {
                 ),
                 DetailToolButton(
                   icon: Icons.play_circle_outline_rounded,
-                  tooltip: '应用内播放',
-                  onTap: () => openPlayer(context, video),
+                  tooltip: '播放',
+                  // 详情页内嵌播放：起播后按钮变为幂等，不再 push 播放页。
+                  onTap: controller.startPlayback,
                 ),
                 DetailToolButton(
                   icon: Icons.open_in_new_rounded,

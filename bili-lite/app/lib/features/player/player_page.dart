@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/tokens.dart';
 import '../../data/models.dart';
 import 'player_controller.dart';
+import 'player_fullscreen.dart';
 import 'player_sections.dart';
 
 /// 应用内播放页。
@@ -53,6 +54,20 @@ class _PlayerPageState extends State<PlayerPage> {
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  /// 全屏页打开时撤下内嵌画面，理由见 `player_fullscreen.dart`。
+  Widget _buildStage() {
+    if (_controller.fullscreen) {
+      return const AspectRatio(
+        aspectRatio: 16 / 9,
+        child: ColoredBox(color: Colors.black),
+      );
+    }
+    return PlayerStage(
+      controller: _controller,
+      onFullscreen: () => openFullscreenPlayer(context, _controller),
+    );
   }
 
   Future<void> _launch(String url) async {
@@ -119,7 +134,7 @@ class _PlayerPageState extends State<PlayerPage> {
         builder: (context, _) => ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: <Widget>[
-            PlayerStage(controller: _controller),
+            _buildStage(),
             const SizedBox(height: 14),
             PlayerControls(
               controller: _controller,

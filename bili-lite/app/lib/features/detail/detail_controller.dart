@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../data/models.dart';
 import '../../data/repository.dart';
 import '../../state/globals.dart';
+import '../player/player_controller.dart';
 
 /// 视频详情控制器：详情数据 + 评论列表 + 分页 + 排序。
 ///
@@ -32,6 +33,14 @@ class DetailController extends ChangeNotifier {
   String? _commentError;
   String _source = '';
   bool _disposed = false;
+
+  /// 内嵌播放器：点封面后才创建，避免进详情页就加载视频流。
+  ///
+  /// 生命周期随之绑定：[startPlayback] 创建并起播，[dispose] 统一释放。
+  /// 旧版是 push 一个独立 [PlayerPage]，这里改成详情页内嵌，
+  /// 用户不必「二次打开页面」才能播放。
+  PlayerController? _player;
+  PlayerController? get player => _player;
 
   /// 详情接口返回后的完整视频（含简介、标签、分 P）。
   Video get resolvedVideo => _detail?.video ?? video;
@@ -116,6 +125,27 @@ class DetailController extends ChangeNotifier {
     await loadComments(refresh: true);
   }
 
+  /// 在详情页内启动播放（幂等：重复点击不会重复创建播放器）。
+  ///
+  /// cid 在列表卡片里可能为空，[PlayerController.load] 内部会补一次详情，
+  /// 因此这里直接用当前 [resolvedVideo] 的 bvid / cid 即可。
+  void startPlayback() {
+    if (_player != null) return;
+    final current = resolvedVideo;
+    final controller = PlayerController(
+      bvid: current.bvid.isNotEmpty ? current.bvid : video.bvid,
+      cid: current.cid,
+      // 复用详情仓库，便于测试注入假数据，也让请求走同一条来源兜底链路。
+      repository: _repo,
+    );
+    _player = controller;
+    // 位置推进定时器与加载一起启动，无论从封面还是 AppBar 起播，
+    // 弹幕时间轴都能被驱动（不必依赖某个特定视图入口）。
+    controller.attachTicker();
+    controller.load();
+    _notify();
+  }
+
   void _notify() {
     if (_disposed) return;
     notifyListeners();
@@ -124,6 +154,7 @@ class DetailController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _player?.dispose();
     super.dispose();
   }
 }

@@ -59,9 +59,13 @@ class _DanmakuPainter extends CustomPainter {
           style: TextStyle(
             color: Color(sprite.color | 0xFF000000),
             fontSize: sprite.fontSize,
+            fontFamilyFallback: danmakuFontFallback,
             height: 1.0,
             shadows: const <Shadow>[
-              Shadow(color: Color(0x99000000), blurRadius: 2, offset: Offset(0, 1)),
+              Shadow(
+                  color: Color(0x99000000),
+                  blurRadius: 2,
+                  offset: Offset(0, 1)),
             ],
           ),
         ),
@@ -71,8 +75,9 @@ class _DanmakuPainter extends CustomPainter {
       // 整体不透明度通过颜色 alpha 叠加。
       canvas.saveLayer(
         Rect.fromLTWH(0, 0, size.width, size.height),
-        Paint()..color = Color.fromARGB(
-            (source.opacity.clamp(0.0, 1.0) * 255).round(), 255, 255, 255),
+        Paint()
+          ..color = Color.fromARGB(
+              (source.opacity.clamp(0.0, 1.0) * 255).round(), 255, 255, 255),
       );
       painter.paint(canvas, Offset(sprite.x, sprite.y));
       canvas.restore();
@@ -89,7 +94,11 @@ class _DanmakuPainter extends CustomPainter {
     final painter = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(fontSize: fontSize, height: 1.0),
+        style: TextStyle(
+          fontSize: fontSize,
+          fontFamilyFallback: danmakuFontFallback,
+          height: 1.0,
+        ),
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,
@@ -104,6 +113,7 @@ class _DanmakuPainter extends CustomPainter {
     return old.position != position ||
         old.source != source ||
         old.source.opacity != source.opacity ||
-        old.source.fontScale != source.fontScale;
+        old.source.fontScale != source.fontScale ||
+        old.source.area != source.area;
   }
 }

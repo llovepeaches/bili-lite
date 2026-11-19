@@ -7,60 +7,87 @@ import '../../core/theme.dart';
 import '../../core/tokens.dart';
 import '../../data/models.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/segmented_switch.dart';
+import 'danmaku_layout.dart';
 import 'danmaku_overlay.dart';
 import 'player_controller.dart';
 
 /// 播放区：画面 + 弹幕层。
+///
+/// [fullscreen] 为 true 时画面直接铺满容器（横屏全屏页用），不再套 16:9
+/// AspectRatio 和圆角；[onFullscreen] 非空时在非全屏画面的右下角提供入口。
 class PlayerStage extends StatelessWidget {
-  const PlayerStage({Key? key, required this.controller}) : super(key: key);
+  const PlayerStage({
+    Key? key,
+    required this.controller,
+    this.fullscreen = false,
+    this.onFullscreen,
+  }) : super(key: key);
 
   final PlayerController controller;
 
+  /// 是否处于横屏全屏页。
+  final bool fullscreen;
+
+  /// 进入全屏的回调；为 null 时不显示全屏按钮（全屏页自身也不需要）。
+  final VoidCallback? onFullscreen;
+
   @override
   Widget build(BuildContext context) {
+    final Widget content = Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        ColoredBox(
+          color: Colors.black,
+          child: controller.hasVideo
+              ? GestureDetector(
+                  // 原生控制条已隐藏，点画面即播放 / 暂停。
+                  behavior: HitTestBehavior.opaque,
+                  onTap: controller.togglePlay,
+                  child: controller.surface.widget,
+                )
+              : PlayerStagePlaceholder(
+                  error: controller.error,
+                  onRetry: controller.load,
+                ),
+        ),
+        // 原生端弹幕画在 Flutter 画布上（Texture 之上）。
+        // Web 端视频是 DOM 元素，弹幕由 video_surface_web 在同层绘制。
+        if (!kIsWeb)
+          DanmakuOverlay(
+            source: controller.danmaku,
+            position: controller.position,
+            enabled: controller.danmakuEnabled,
+          ),
+        if (controller.loading)
+          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        if (controller.hasVideo && !controller.isPlaying && !controller.loading)
+          Center(
+            child: GlassCircleButton(
+              icon: Icons.play_arrow_rounded,
+              size: 56,
+              onTap: controller.togglePlay,
+            ),
+          ),
+        if (!fullscreen && onFullscreen != null)
+          Positioned(
+            right: 10,
+            bottom: 10,
+            child: GlassCircleButton(
+              icon: Icons.fullscreen_rounded,
+              size: 36,
+              onTap: onFullscreen!,
+            ),
+          ),
+      ],
+    );
+
+    if (fullscreen) return content;
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
       child: AspectRatio(
         aspectRatio: 16 / 9,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            ColoredBox(
-              color: Colors.black,
-              child: controller.hasVideo
-                  ? GestureDetector(
-                      // 原生控制条已隐藏，点画面即播放 / 暂停。
-                      behavior: HitTestBehavior.opaque,
-                      onTap: controller.togglePlay,
-                      child: controller.surface.widget,
-                    )
-                  : PlayerStagePlaceholder(
-                      error: controller.error,
-                      onRetry: controller.load,
-                    ),
-            ),
-            // 原生端弹幕画在 Flutter 画布上（Texture 之上）。
-            // Web 端视频是 DOM 元素，弹幕由 video_surface_web 在同层绘制。
-            if (!kIsWeb)
-              DanmakuOverlay(
-                source: controller.danmaku,
-                position: controller.position,
-                enabled: controller.danmakuEnabled,
-              ),
-            if (controller.loading)
-              const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            if (controller.hasVideo &&
-                !controller.isPlaying &&
-                !controller.loading)
-              Center(
-                child: GlassCircleButton(
-                  icon: Icons.play_arrow_rounded,
-                  size: 56,
-                  onTap: controller.togglePlay,
-                ),
-              ),
-          ],
-        ),
+        child: content,
       ),
     );
   }
@@ -205,6 +232,10 @@ class PlayerControls extends StatelessWidget {
   }
 }
 
+/// 弹幕显示设置：不透明度、显示大小（字号缩放）、显示区域。
+///
+/// 三个参数都写在 [DanmakuSource] 上，原生画布与 Web canvas 通过同一份
+/// [DanmakuLayout.sprites] 公式读取，改一处两端同时生效。
 class PlayerDanmakuSettings extends StatelessWidget {
   const PlayerDanmakuSettings({Key? key, required this.controller})
       : super(key: key);
@@ -232,17 +263,46 @@ class PlayerDanmakuSettings extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _SliderRow(
-              label: '不透明度',
-              value: c.danmakuOpacity,
-              onChanged: c.setDanmakuOpacity),
+            label: '不透明度',
+            value: c.danmakuOpacity,
+            min: 0.1,
+            max: 1.0,
+            format: _percent,
+            onChanged: c.setDanmakuOpacity,
+          ),
           _SliderRow(
-              label: '字号',
-              value: c.danmakuFontScale,
-              onChanged: c.setDanmakuFontScale),
+            label: '显示大小',
+            value: c.danmakuFontScale,
+            min: 0.6,
+            max: 2.0,
+            format: _percent,
+            onChanged: c.setDanmakuFontScale,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: <Widget>[
+              SizedBox(
+                width: 56,
+                child: Text(
+                  '显示区域',
+                  style: TextStyle(fontSize: 11.5, color: context.subTextColor),
+                ),
+              ),
+              Expanded(
+                child: GlassSegmented(
+                  labels: danmakuAreaLabels,
+                  index: danmakuAreaIndex(c.danmakuArea),
+                  onChanged: c.setDanmakuAreaIndex,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
+
+  static String _percent(double value) => '${(value * 100).round()}%';
 }
 
 class _SliderRow extends StatelessWidget {
@@ -250,15 +310,23 @@ class _SliderRow extends StatelessWidget {
     Key? key,
     required this.label,
     required this.value,
+    required this.min,
+    required this.max,
     required this.onChanged,
+    this.format,
   }) : super(key: key);
 
   final String label;
   final double value;
+  final double min;
+  final double max;
   final void Function(double) onChanged;
+  final String Function(double)? format;
 
   @override
   Widget build(BuildContext context) {
+    final String text =
+        format == null ? value.toStringAsFixed(1) : format!(value);
     return Row(
       children: <Widget>[
         SizedBox(
@@ -271,15 +339,15 @@ class _SliderRow extends StatelessWidget {
         Expanded(
           child: Slider(
             value: value,
-            min: label == '字号' ? 0.6 : 0.1,
-            max: label == '字号' ? 2.0 : 1.0,
+            min: min,
+            max: max,
             onChanged: onChanged,
           ),
         ),
         SizedBox(
           width: 40,
           child: Text(
-            value.toStringAsFixed(1),
+            text,
             style: TextStyle(fontSize: 11, color: context.subTextColor),
           ),
         ),

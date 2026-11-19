@@ -6,6 +6,7 @@ import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../core/tokens.dart';
 import '../../data/models.dart';
+import '../../data/repository.dart';
 import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/cover_image.dart';
 import '../../widgets/glass.dart';
@@ -16,6 +17,7 @@ import '../account/login_gate.dart';
 import 'detail_components.dart';
 import 'detail_controller.dart';
 import 'detail_extras.dart';
+import 'detail_player.dart';
 
 export 'detail_external.dart';
 
@@ -26,9 +28,16 @@ export 'detail_external.dart';
 /// 数据与分页在 [DetailController] 里；可复用卡片在 `detail_components.dart`，
 /// 外链兜底在 `detail_external.dart`。本文件只负责页面骨架和内容编排。
 class VideoDetailView extends StatefulWidget {
-  const VideoDetailView({Key? key, required this.video}) : super(key: key);
+  const VideoDetailView({
+    Key? key,
+    required this.video,
+    this.repository,
+  }) : super(key: key);
 
   final Video video;
+
+  /// 可选仓库注入，便于测试覆盖；运行时走全局默认仓库。
+  final BiliRepository? repository;
 
   @override
   State<VideoDetailView> createState() => _VideoDetailViewState();
@@ -43,7 +52,10 @@ class _VideoDetailViewState extends State<VideoDetailView> {
   @override
   void initState() {
     super.initState();
-    _controller = DetailController(video: widget.video);
+    _controller = DetailController(
+      video: widget.video,
+      repository: widget.repository,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _controller.load());
   }
 
@@ -102,14 +114,11 @@ class _VideoDetailViewState extends State<VideoDetailView> {
             children: <Widget>[
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                // 窄屏（尤其是横屏手机）下 16:9 播放器会占满整屏，
-                // 把详情挤到看不见的地方。这里限制播放器高度不超过
-                // 可用高度的一半，保证下方内容始终有一部分露出来。
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: constraints.maxHeight * 0.5,
-                  ),
-                  child: _buildPlayer(),
+                // 窄屏（尤其是横屏手机）下 16:9 画面会占满整屏，把详情
+                // 挤到看不见的地方。这里只约束画面高度，控制条 / 弹幕
+                // 设置仍按自身高度排布，避免整块被压到溢出。
+                child: _buildPlayer(
+                  stageMaxHeight: constraints.maxHeight * 0.5,
                 ),
               ),
               Padding(
@@ -265,15 +274,21 @@ class _VideoDetailViewState extends State<VideoDetailView> {
 
   // ─────────────────────────── 播放器 ───────────────────────────
 
-  Widget _buildPlayer() {
+  Widget _buildPlayer({double? stageMaxHeight}) {
+    final player = _controller.player;
+    if (player != null) {
+      // 已经起播：详情页内嵌播放器，不再二次打开独立播放页。
+      return DetailPlayer(controller: player, stageMaxHeight: stageMaxHeight);
+    }
     final v = _controller.resolvedVideo;
-    return AspectRatio(
+    final cover = AspectRatio(
       aspectRatio: 16 / 9,
       child: GestureDetector(
+        key: const Key('detail-cover-play'),
         behavior: HitTestBehavior.opaque,
-        // 播放入口只保留这一个，避免父子手势同时命中把两个 PlayerPage
-        // 叠进导航栈。
-        onTap: () => openPlayer(context, v),
+        // 封面是唯一的起播入口：点一下就在原地创建内嵌播放器。
+        // 起播后由 DetailPlayer 接管画面与交互，不会再 push 播放页。
+        onTap: _startPlayback,
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
@@ -320,7 +335,17 @@ class _VideoDetailViewState extends State<VideoDetailView> {
         ),
       ),
     );
+    final maxHeight = stageMaxHeight;
+    if (maxHeight == null) return cover;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: cover,
+    );
   }
+
+  /// 起播：播放器创建与定时器挂载都在 [DetailController.startPlayback] 内，
+  /// 这里只负责转发，保证封面与 AppBar 两个入口行为一致。
+  void _startPlayback() => _controller.startPlayback();
 
   // ─────────────────────────── 评论 ───────────────────────────
 

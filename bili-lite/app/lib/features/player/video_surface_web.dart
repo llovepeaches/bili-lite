@@ -93,7 +93,8 @@ class _WebVideoSurface implements VideoSurface {
   String? get error => _error;
 
   @override
-  Future<void> open(String url, {Map<String, String> headers = const <String, String>{}}) async {
+  Future<void> open(String url,
+      {Map<String, String> headers = const <String, String>{}}) async {
     _error = null;
     onError(null);
 
@@ -206,12 +207,12 @@ class _WebVideoSurface implements VideoSurface {
       position: _position,
       size: Size(width, height),
       measure: (String text, double fontSize) {
-        ctx.font = '${fontSize.toStringAsFixed(1)}px sans-serif';
+        ctx.font = '${fontSize.toStringAsFixed(1)}px $danmakuFontCss';
         return (ctx.measureText(text).width ?? 0).toDouble();
       },
     );
     for (final s in sprites) {
-      ctx.font = '${s.fontSize.toStringAsFixed(1)}px sans-serif';
+      ctx.font = '${s.fontSize.toStringAsFixed(1)}px $danmakuFontCss';
       ctx.fillStyle = danmakuColorToCss(s.color, source.opacity);
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
       ctx.lineWidth = 2;
