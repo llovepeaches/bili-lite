@@ -175,11 +175,10 @@ void main() {
     await captureScrub(tester, 5);
   });
 
-  /// 抬起态的**静态验收图**：按住底栏不动，等弹簧收敛后截图。
+  /// 参考式选中态的**静态验收图**：按住并拖动第一个 tab，等弹簧收敛。
   ///
-  /// 单独出图而不是复用擦洗帧 ——
-  /// 擦洗帧里珠子停在两格之间，是「运动中」的样子；
-  /// 验收要看的是「按住某个 tab 不动」时的完整形态。
+  /// 对齐 AndroidLiquidGlass `LiquidBottomTabs`：选中胶囊常驻、跟手、
+  /// 按下放大、带色散彩边；这里用「拖过阈值并保持按住」把它推进到按压态。
   Future<void> captureLift(
     WidgetTester tester,
     String name, {
@@ -195,14 +194,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
     }
 
-    // 透镜在「按住并横向拖动超过阈值」时才抬起
-    // （单纯按住不动只是按压态辉光，不会升起玻璃珠）。
-    // 这里拖过阈值后**保持手指不松开**，等弹簧收敛到 1.0 再截图。
+    // 拖过擦洗阈值并保持手指不松开，让选中胶囊进入按压态。
     final TestGesture gesture = await tester.startGesture(
       tester.getTopLeft(find.byType(LiquidGlassDock)) + const Offset(60, 48),
     );
     await gesture.moveBy(const Offset(24, 0));
-    // 逐帧推进，让抬起弹簧真正收敛到 1.0。
+    // 逐帧推进，让按压 / 速度弹簧真正收敛。
     for (int i = 0; i < 40; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
@@ -213,11 +210,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 800));
   }
 
-  testWidgets('验收图 1：浅色抬起态', (WidgetTester tester) async {
+  testWidgets('验收图 1：浅色按压态', (WidgetTester tester) async {
     await captureLift(tester, '103-r21-lift-light');
   });
 
-  testWidgets('验收图 2：深色抬起态', (WidgetTester tester) async {
+  testWidgets('验收图 2：深色按压态', (WidgetTester tester) async {
     await captureLift(
       tester,
       '104-r21-lift-dark',
@@ -225,7 +222,7 @@ void main() {
     );
   });
 
-  testWidgets('验收图 3：窄屏（340pt）抬起态', (WidgetTester tester) async {
+  testWidgets('验收图 3：窄屏（340pt）按压态', (WidgetTester tester) async {
     await captureLift(tester, '105-r21-lift-narrow', width: 340);
   });
 }

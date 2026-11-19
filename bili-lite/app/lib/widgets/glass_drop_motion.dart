@@ -25,11 +25,19 @@ import 'package:flutter/widgets.dart';
 class GlassDropMotion extends ChangeNotifier {
   GlassDropMotion({required TickerProvider vsync})
       : _lift = AnimationController.unbounded(vsync: vsync),
-        _travel = AnimationController.unbounded(vsync: vsync) {
+        _travel = AnimationController.unbounded(vsync: vsync),
+        _velocity = AnimationController.unbounded(vsync: vsync) {
     _lift.addListener(notifyListeners);
     _travel.addListener(notifyListeners);
+    // 横向速度：拖动时跟手计算，松手后弹回 0。
+    // 参考 DampedDragAnimation 用 VelocityTracker 算速度来驱动胶囊形变。
+    _velocity.addListener(notifyListeners);
     _travel.addStatusListener(_handleTravelStatus);
   }
+
+  /// 横向速度控制器：值域 -1~1（归一化到「每秒跨几个 tab」的量级），
+  /// 拖动中被 snap 到当前瞬时速度，松手后用弹簧衰减回 0。
+  final AnimationController _velocity;
 
   /// 抬起/落位的控制器：0 = 贴在底盘上，1 = 完全抬起。
   final AnimationController _lift;
@@ -143,6 +151,31 @@ class GlassDropMotion extends ChangeNotifier {
   /// 飞行进度（0..1，弹簧可以过冲）。
   double get travel => _travel.value;
 
+  /// 归一化横向速度（-1~1）：驱动参考实现里玻璃胶囊的
+  /// 「横向拉伸 / 纵向压缩」形变。拖动中跟手更新，松手后弹回 0。
+  double get velocity => _velocity.value.clamp(-1.0, 1.0);
+
+  /// 把一个速度值直接写入控制器（拖动跟手时用，不走动画）。
+  void _snapVelocity(double value) {
+    if (_velocity.isAnimating) _velocity.stop();
+    _velocity.value = value.clamp(-1.0, 1.0);
+  }
+
+  /// 松手后让速度弹簧衰减回 0。
+  void _releaseVelocity() {
+    _velocity.animateWith(
+      SpringSimulation(
+        const SpringDescription(mass: 1, stiffness: 300, damping: 30),
+        _velocity.value,
+        0,
+        0,
+      ),
+    );
+  }
+
+  /// 测试钩子：直接设定速度。
+  void setVelocityForTest(double value) => _snapVelocity(value);
+
   // ---- 测试钩子 ----
   //
   // 动画进度由弹簧驱动，测试里没法精确停在某一帧。
@@ -203,9 +236,7 @@ class GlassDropMotion extends ChangeNotifier {
   double _easeTravel(double t) {
     if (t <= 0) return 0;
     if (t >= 1) return 1;
-    return t < 0.5
-        ? 4 * t * t * t
-        : 1 - math.pow(-2 * t + 2, 3) / 2;
+    return t < 0.5 ? 4 * t * t * t : 1 - math.pow(-2 * t + 2, 3) / 2;
   }
 
   /// 更新各个 tab 的中心 x。
@@ -220,6 +251,8 @@ class GlassDropMotion extends ChangeNotifier {
     _liftTarget = null;
     _lift.value = 0;
     _travel.value = 1;
+    if (_velocity.isAnimating) _velocity.stop();
+    _velocity.value = 0;
   }
 
   /// 飞向某个 tab。
@@ -268,9 +301,19 @@ class GlassDropMotion extends ChangeNotifier {
     // 拖到头就停在最后一个 tab 上。这里按首尾 tab 的中心做钳制。
     final double next = localX.clamp(_centers.first, _centers.last);
     if (next != _scrubX) {
+      // 参考 DampedDragAnimation.updateVelocity 用 VelocityTracker 的
+      // 速度 ÷ valueRange 跨度得到「每秒跨几个 tab」，再在 layerBlock 里 ÷10。
+      // Flutter 的 scrubTo 逐位移驱动、没有时间戳，无法复刻 VelocityTracker；
+      // 因此以「相邻两帧跨了几个 tab」作为归一化速度直接交给形变公式，
+      // 不引入任何自定缩放系数（变形系数全部在参考胶囊里按文档给出）。
+      final double previous = _scrubX ?? next;
+      final double tabWidth = _centers.length > 1
+          ? (_centers.last - _centers.first) / (_centers.length - 1)
+          : 1.0;
+      _snapVelocity((next - previous) / tabWidth);
       _scrubX = next;
-      // 主动通知：擦洗位置变了，透镜罩住哪个 tab、
-      // 底栏里哪一格要淡出，都依赖这个状态。
+      // 主动通知：擦洗位置变了，选中胶囊罩住哪个 tab、
+      // 玻璃胶囊的位置与速度，都依赖这个状态。
       // 不通知的话，只有弹簧起跳那几帧会重建，
       // 后面拖动的位置变化就反映不到界面上。
       notifyListeners();
@@ -291,6 +334,7 @@ class GlassDropMotion extends ChangeNotifier {
     _travelOrigin = nearest;
     // 起点是手指松开的地方，不是那个 tab 的中心。
     _travelOriginX = releaseX;
+    _releaseVelocity(); // 参考 onDragStopped：速度衰减，形变回弹。
     _animateTravel();
   }
 
@@ -334,8 +378,10 @@ class GlassDropMotion extends ChangeNotifier {
   void dispose() {
     _lift.removeListener(notifyListeners);
     _travel.removeListener(notifyListeners);
+    _velocity.removeListener(notifyListeners);
     _lift.dispose();
     _travel.dispose();
+    _velocity.dispose();
     super.dispose();
   }
 }

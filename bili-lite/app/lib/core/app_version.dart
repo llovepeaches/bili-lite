@@ -7,11 +7,14 @@
 ///
 /// CI 的 `Verify version sync` 步骤会逐项比对，任一处不一致直接让构建失败，
 /// 避免再次出现「设置页写死 1.4.0 / pubspec 1.6.0 / tag v1.6.0」三处漂移。
-const String kAppVersion = '0.1.3';
-const int kAppBuildNumber = 4;
+const String kAppVersion = '0.1.4';
+const int kAppBuildNumber = 5;
 
-/// 展示用完整版本串，与 pubspec 的 version 字段逐字一致。
-const String kAppVersionLabel = '$kAppVersion+$kAppBuildNumber';
+/// 用户可见版本串：只显示 `major.minor.patch`。
+///
+/// `kAppBuildNumber` 仍保留给 `pubspec.yaml`、原生 versionCode 与 CI 校验使用，
+/// 但不再拼到应用内展示文本里——从 v0.1.4 起用户侧统一不显示 `+构建号`。
+const String kAppVersionLabel = kAppVersion;
 
 /// 发布 tag 前缀。更新检查只识别这个前缀，历史 tag 不会误报。
 const String kReleaseTagPrefix = 'bili-lite-v';

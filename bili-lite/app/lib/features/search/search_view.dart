@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../core/navigation.dart';
-import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../core/tokens.dart';
 import '../../data/models.dart';
 import '../../state/globals.dart';
+import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/state_views.dart';
-import '../../widgets/video_grid.dart';
+import '../../widgets/video_result_view.dart';
 import 'search_controller.dart';
 
 /// 搜索页视图。逻辑与状态在 [SearchController] 里。
@@ -47,8 +47,7 @@ class _SearchViewState extends State<SearchView> {
     final keyword = _controller.keyword;
     if (!more && _input.text != keyword) {
       _input.text = keyword;
-      _input.selection =
-          TextSelection.collapsed(offset: _input.text.length);
+      _input.selection = TextSelection.collapsed(offset: _input.text.length);
     }
     if (mounted) setState(() {});
   }
@@ -62,62 +61,60 @@ class _SearchViewState extends State<SearchView> {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 12,
-        flexibleSpace: const GlassBar(),
-        title: SizedBox(
-          height: 40,
-          child: GlassPanel(
-            radius: 14,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: TextField(
-              controller: _input,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (v) => _search(v),
-              style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                hintText: '搜索视频、UP 主…',
-                prefixIcon: Icon(Icons.search_rounded,
-                    size: 19, color: dark ? AppColors.darkSub : AppColors.lightSub),
-                prefixIconConstraints:
-                    const BoxConstraints(minWidth: 36, maxHeight: 36),
-                suffixIcon: _input.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 17),
-                        padding: EdgeInsets.zero,
-                        constraints:
-                            const BoxConstraints(maxWidth: 34, maxHeight: 34),
-                        onPressed: _clear,
-                      ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 11),
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                filled: false,
-              ),
-              onChanged: (_) => setState(() {}),
+    return AppPageScaffold(
+      titleSpacing: 12,
+      title: SizedBox(
+        height: 40,
+        child: GlassPanel(
+          radius: 14,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: TextField(
+            controller: _input,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (v) => _search(v),
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              hintText: '搜索视频、UP 主…',
+              prefixIcon: Icon(Icons.search_rounded,
+                  size: 19,
+                  color: dark ? AppColors.darkSub : AppColors.lightSub),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 36, maxHeight: 36),
+              suffixIcon: _input.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 17),
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(maxWidth: 34, maxHeight: 34),
+                      onPressed: _clear,
+                    ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 11),
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              filled: false,
             ),
+            onChanged: (_) => setState(() {}),
           ),
         ),
-        actions: <Widget>[
-          Padding(
-            padding: const EdgeInsets.only(right: 12, left: 2),
-            child: GlassChip(
-              label: '搜索',
-              tint: AppColors.pink,
-              radius: 12,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              labelStyle: const TextStyle(
-                  fontSize: 13.5,
-                  color: AppColors.pink,
-                  fontWeight: FontWeight.w700),
-              onTap: () => _search(_input.text),
-            ),
-          ),
-        ],
       ),
+      actions: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(right: 12, left: 2),
+          child: GlassChip(
+            label: '搜索',
+            tint: AppColors.pink,
+            radius: 12,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            labelStyle: const TextStyle(
+                fontSize: 13.5,
+                color: AppColors.pink,
+                fontWeight: FontWeight.w700),
+            onTap: () => _search(_input.text),
+          ),
+        ),
+      ],
       body: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) => _buildBody(),
@@ -130,29 +127,16 @@ class _SearchViewState extends State<SearchView> {
     final keyword = _controller.keyword;
     if (keyword.isEmpty) return _buildLanding();
 
-    final results = _controller.results;
-    final error = _controller.error;
-
-    if (_controller.loading && results.isEmpty && error == null) {
-      return LayoutBuilder(builder: (context, c) {
-        return LoadingGrid(
-          columns: Breakpoints.columns(c.maxWidth),
-          style: prefs.cardStyle,
-        );
-      });
-    }
-    if (error != null && results.isEmpty) {
-      return ErrorView(message: error, onRetry: () => _search(keyword));
-    }
-
-    return VideoGrid(
-      videos: results,
-      style: prefs.cardStyle,
-      onRefresh: () => _search(keyword),
-      onTap: (Video video) => openVideoDetail(context, video),
+    return VideoResultView(
+      videos: _controller.results,
+      loading: _controller.loading,
+      error: _controller.error,
       hasMore: _controller.hasMore,
       loadingMore: _controller.loadingMore,
       onLoadMore: () => _search(keyword, more: true),
+      onRefresh: () => _search(keyword),
+      onTap: (Video video) => openVideoDetail(context, video),
+      style: prefs.cardStyle,
       header: Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
         child: GlassPanel(
@@ -201,7 +185,8 @@ class _SearchViewState extends State<SearchView> {
                   radius: 10,
                   padding: const EdgeInsets.all(6),
                   onTap: () => searchHistory.clear(),
-                  child: Icon(Icons.delete_outline_rounded, size: 17, color: sub),
+                  child:
+                      Icon(Icons.delete_outline_rounded, size: 17, color: sub),
                 ),
               ),
               Wrap(

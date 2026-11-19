@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../../core/navigation.dart';
 import '../../core/tokens.dart';
-import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../state/globals.dart';
 import '../../state/library_state.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../account/account_entry.dart';
+import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/page_header_card.dart';
 import '../../widgets/state_views.dart';
-import '../../widgets/video_grid.dart';
+import '../../widgets/video_result_view.dart';
 import 'library_controller.dart';
 
 /// 「我的」页（视图层）：收藏 / 观看历史 / 稍后再看。
@@ -57,7 +57,8 @@ class _LibraryPageState extends State<LibraryPage>
     final ok = await showConfirmDialog(
       context,
       title: '清空列表？',
-      message: '将删除${LibraryController.labels[LibraryKind.values.indexOf(kind)]}中的全部 '
+      message:
+          '将删除${LibraryController.labels[LibraryKind.values.indexOf(kind)]}中的全部 '
           '${library.count(kind)} 条记录，此操作不可撤销。',
       confirmLabel: '清空',
     );
@@ -76,32 +77,29 @@ class _LibraryPageState extends State<LibraryPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('我的'),
-        flexibleSpace: const GlassBar(),
-        bottom: TabBar(
-          controller: _tabController,
-          indicator: GlassDecorations.tabIndicator(context),
-          indicatorPadding: GlassDecorations.tabIndicatorPadding,
-          indicatorSize: TabBarIndicatorSize.label,
-          labelColor: GlassDecorations.tabLabelColor(context),
-          unselectedLabelColor: GlassDecorations.tabUnselectedLabelColor(context),
-          labelStyle:
-              const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-          labelPadding: const EdgeInsets.symmetric(horizontal: 14),
-          tabs: List<Widget>.generate(
-            LibraryController.labels.length,
-            (i) => Tab(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(LibraryController.icons[i], size: 15),
-                  const SizedBox(width: 5),
-                  Text(LibraryController.labels[i],
-                      style: const TextStyle(fontSize: 13)),
-                ],
-              ),
+    return AppPageScaffold(
+      title: const Text('我的'),
+      bottom: TabBar(
+        controller: _tabController,
+        indicator: GlassDecorations.tabIndicator(context),
+        indicatorPadding: GlassDecorations.tabIndicatorPadding,
+        indicatorSize: TabBarIndicatorSize.label,
+        labelColor: GlassDecorations.tabLabelColor(context),
+        unselectedLabelColor: GlassDecorations.tabUnselectedLabelColor(context),
+        labelStyle:
+            const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 14),
+        tabs: List<Widget>.generate(
+          LibraryController.labels.length,
+          (i) => Tab(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(LibraryController.icons[i], size: 15),
+                const SizedBox(width: 5),
+                Text(LibraryController.labels[i],
+                    style: const TextStyle(fontSize: 13)),
+              ],
             ),
           ),
         ),
@@ -118,17 +116,9 @@ class _LibraryPageState extends State<LibraryPage>
     final items = library.of(kind);
     final videos = items.map((e) => e.video).toList();
 
-    if (!library.loaded) {
-      return LayoutBuilder(builder: (context, c) {
-        return LoadingGrid(
-          columns: Breakpoints.columns(c.maxWidth),
-          style: prefs.cardStyle,
-        );
-      });
-    }
-
-    return VideoGrid(
+    return VideoResultView(
       videos: videos,
+      loading: !library.loaded,
       style: prefs.cardStyle,
       onRefresh: () => library.load(),
       onTap: _openDetail,

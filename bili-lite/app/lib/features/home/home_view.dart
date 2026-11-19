@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/config.dart';
 import '../../core/navigation.dart';
 import '../../core/partitions.dart';
-import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../core/tokens.dart';
 import '../../data/models.dart';
@@ -11,11 +10,12 @@ import '../../state/globals.dart';
 import '../account/account_entry.dart';
 import '../account/account_identity.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/page_header_card.dart';
 import '../../widgets/partition_sheet.dart';
 import '../../widgets/state_views.dart';
-import '../../widgets/video_grid.dart';
+import '../../widgets/video_result_view.dart';
 import 'home_controller.dart';
 
 /// 首页视图：推荐 / 热门 / 排行榜三个频道。
@@ -37,7 +37,8 @@ class _HomeViewState extends State<HomeView>
   void initState() {
     super.initState();
     _controller = HomeController();
-    _tabController = TabController(length: HomeChannel.values.length, vsync: this);
+    _tabController =
+        TabController(length: HomeChannel.values.length, vsync: this);
     _tabController.addListener(_onTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.load(HomeChannel.recommended);
@@ -71,70 +72,65 @@ class _HomeViewState extends State<HomeView>
     // 整页重建会让 AppBar 的 flexibleSpace（玻璃条）与卡片表面的高光
     // 动画反复重播，表现为整页蒙一层白纱、标题被盖住。
     // AppBar 保持静态，只把会变的「数据源」小部件单独订阅。
-    return Scaffold(
-      appBar: AppBar(
-            titleSpacing: 16,
-            flexibleSpace: const GlassBar(),
-            title: Row(
-              children: const <Widget>[
-                AppLogo(size: 28),
-                SizedBox(width: 9),
-                Text('Bili Lite'),
-              ],
-            ),
-            actions: <Widget>[
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: AnimatedBuilder(
-                  animation: _controller,
-                  builder: (_, __) => SourceBadge(
-                      source: _controller.sourceOf(_controller.channel)),
-                ),
-              ),
-              // 登录入口前置：顶栏常驻一个账号按钮，
-              // 未登录时显示「登录」图标，已登录时显示头像。
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: GlassPill(
-                  radius: 12,
-                  padding: const EdgeInsets.all(7),
-                  onTap: _openAccount,
-                  child: const _AccountButton(),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: GlassPill(
-                  radius: 12,
-                  padding: const EdgeInsets.all(7),
-                  onTap: () =>
-                      _controller.load(_controller.channel, force: true),
-                  child: const Icon(Icons.refresh_rounded,
-                      size: 18, color: AppColors.pink),
-                ),
-              ),
-            ],
-            bottom: TabBar(
-              controller: _tabController,
-              isScrollable: false,
-              indicator: GlassDecorations.tabIndicator(context),
-              indicatorPadding: GlassDecorations.tabIndicatorPadding,
-              indicatorSize: TabBarIndicatorSize.label,
-              labelColor: GlassDecorations.tabLabelColor(context),
-              unselectedLabelColor:
-                  GlassDecorations.tabUnselectedLabelColor(context),
-              labelStyle:
-                  const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-              unselectedLabelStyle:
-                  const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
-              labelPadding: const EdgeInsets.symmetric(horizontal: 18),
-              tabs: const <Widget>[
-                Tab(text: '推荐'),
-                Tab(text: '热门'),
-                Tab(text: '排行榜'),
-              ],
-            ),
+    return AppPageScaffold(
+      titleSpacing: 16,
+      title: Row(
+        children: const <Widget>[
+          AppLogo(size: 28),
+          SizedBox(width: 9),
+          Text('Bili Lite'),
+        ],
+      ),
+      actions: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (_, __) =>
+                SourceBadge(source: _controller.sourceOf(_controller.channel)),
           ),
+        ),
+        // 登录入口前置：顶栏常驻一个账号按钮，
+        // 未登录时显示「登录」图标，已登录时显示头像。
+        Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: GlassPill(
+            radius: 12,
+            padding: const EdgeInsets.all(7),
+            onTap: _openAccount,
+            child: const _AccountButton(),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: GlassPill(
+            radius: 12,
+            padding: const EdgeInsets.all(7),
+            onTap: () => _controller.load(_controller.channel, force: true),
+            child: const Icon(Icons.refresh_rounded,
+                size: 18, color: AppColors.pink),
+          ),
+        ),
+      ],
+      bottom: TabBar(
+        controller: _tabController,
+        isScrollable: false,
+        indicator: GlassDecorations.tabIndicator(context),
+        indicatorPadding: GlassDecorations.tabIndicatorPadding,
+        indicatorSize: TabBarIndicatorSize.label,
+        labelColor: GlassDecorations.tabLabelColor(context),
+        unselectedLabelColor: GlassDecorations.tabUnselectedLabelColor(context),
+        labelStyle:
+            const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+        unselectedLabelStyle:
+            const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 18),
+        tabs: const <Widget>[
+          Tab(text: '推荐'),
+          Tab(text: '热门'),
+          Tab(text: '排行榜'),
+        ],
+      ),
       body: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) => _buildBody(_controller.channel),
@@ -143,34 +139,17 @@ class _HomeViewState extends State<HomeView>
   }
 
   Widget _buildBody(HomeChannel channel) {
-    final videos = _controller.videosOf(channel);
-    final error = _controller.errorOf(channel);
-    final style = prefs.cardStyle;
-
-    if (_controller.loadingOf(channel) && videos.isEmpty && error == null) {
-      return LayoutBuilder(builder: (context, c) {
-        return LoadingGrid(
-          columns: Breakpoints.columns(c.maxWidth),
-          style: style,
-        );
-      });
-    }
-    if (error != null && videos.isEmpty) {
-      return ErrorView(
-        message: error,
-        onRetry: () => _controller.load(channel, force: true),
-      );
-    }
-
-    return VideoGrid(
-      videos: videos,
+    return VideoResultView(
+      videos: _controller.videosOf(channel),
+      loading: _controller.loadingOf(channel),
+      error: _controller.errorOf(channel),
       ranked: channel == HomeChannel.rank,
       hasMore: _controller.hasMore(channel),
       loadingMore: _controller.loadingMore,
-      style: style,
       onLoadMore: () => _controller.load(channel, more: true),
       onRefresh: () => _controller.load(channel, force: true),
       onTap: (Video video) => openVideoDetail(context, video),
+      style: prefs.cardStyle,
       header: _buildHeader(channel),
       empty: EmptyView(
         icon: Icons.video_library_outlined,
@@ -213,8 +192,7 @@ class _HomeViewState extends State<HomeView>
               onTap: () => _openPartitionPicker(),
             )
           : null,
-      subtitleWidget:
-          channel == HomeChannel.rank ? _partitionBar() : null,
+      subtitleWidget: channel == HomeChannel.rank ? _partitionBar() : null,
     );
   }
 
