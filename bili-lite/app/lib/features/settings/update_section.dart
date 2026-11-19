@@ -96,12 +96,6 @@ class _UpdateSectionState extends State<UpdateSection> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        Text(
-          '仅读取 GitHub Releases 的公开版本号与发布页地址，不上传任何本机数据；'
-          '启动后每 12 小时自动检查一次，也可随时手动检查。',
-          style: TextStyle(fontSize: 11.5, height: 1.5, color: sub),
-        ),
       ],
     );
   }

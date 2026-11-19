@@ -6,7 +6,7 @@ import 'glass.dart';
 ///
 /// 这里不改变任何视觉参数，只把各页面重复写的
 /// `Scaffold + AppBar + GlassBar` 收拢到一处。需要特殊 AppBar 的页面
-/// （例如透明背景的播放页）仍可直接使用 [Scaffold]。
+/// 仍可直接使用 [Scaffold]。
 class AppPageScaffold extends StatelessWidget {
   const AppPageScaffold({
     Key? key,

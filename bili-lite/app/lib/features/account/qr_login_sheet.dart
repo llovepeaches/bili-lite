@@ -119,8 +119,8 @@ class _QrLoginSheetState extends State<_QrLoginSheet> {
         Text(
           '打开手机上的哔哩哔哩 App →「我的」→ 扫一扫，扫描下方二维码并在手机上确认。',
           textAlign: TextAlign.center,
-          style: TextStyle(
-              fontSize: 12, height: 1.6, color: context.subTextColor),
+          style:
+              TextStyle(fontSize: 12, height: 1.6, color: context.subTextColor),
         ),
         const SizedBox(height: 18),
         if (challenge == null)
@@ -177,8 +177,6 @@ class _QrLoginSheetState extends State<_QrLoginSheet> {
             ),
           ],
         ),
-        const SizedBox(height: 20),
-        _boundary(context),
       ],
     );
   }
@@ -206,8 +204,8 @@ class _QrLoginSheetState extends State<_QrLoginSheet> {
               size: 54, color: AppStatus.success),
           const SizedBox(height: 16),
           Text('登录成功${u == null ? '' : '，${u.name}'}',
-              style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w700)),
+              style:
+                  const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           Text('凭证已保存在本机，关闭后即可使用。',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
@@ -274,33 +272,6 @@ class _QrLoginSheetState extends State<_QrLoginSheet> {
               style: TextStyle(fontSize: 12.5, color: color, height: 1.5)),
         ),
       ],
-    );
-  }
-
-  /// 数据边界：扫码登录与官方 OAuth 不同，必须明确告知会保存 Cookie。
-  Widget _boundary(BuildContext context) {
-    return GlassPanel(
-      radius: 14,
-      padding: const EdgeInsets.all(12),
-      tint: AppColors.pink.withOpacity(0.08),
-      showSheen: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text('关于这次登录',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 7),
-          Text(
-            '扫码登录使用的是 B 站官方 Web 登录流程，不需要开放平台凭证，也不需要本应用'
-            '搭建任何服务端。登录成功后，本机将保存 B 站 Web 登录 Cookie'
-            '（SESSDATA / bili_jct / DedeUserID 等）以及昵称、头像、mid，'
-            '仅用于向 bilibili.com 请求公开数据，不会上传到别处、不保存密码。'
-            '注意：本地存储不是硬件加密，退出登录会清除这些 Cookie。',
-            style: TextStyle(
-                fontSize: 11.5, height: 1.65, color: context.subTextColor),
-          ),
-        ],
-      ),
     );
   }
 }

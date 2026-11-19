@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../core/format.dart';
-import '../core/glass_theme.dart';
 import '../core/card_style.dart';
 import '../core/responsive.dart';
 import '../core/theme.dart';
@@ -34,9 +33,6 @@ class SourceBadge extends StatelessWidget {
             decoration: BoxDecoration(
               color: color,
               shape: BoxShape.circle,
-              boxShadow: <BoxShadow>[
-                BoxShadow(color: color.withOpacity(0.7), blurRadius: 5),
-              ],
             ),
           ),
           const SizedBox(width: 5),
@@ -94,7 +90,7 @@ class LoadingGrid extends StatelessWidget {
   }
 }
 
-/// 玻璃骨架卡片：模拟封面 + 两行标题 + 一行数据的位置。
+/// 扁平骨架卡片：模拟封面 + 两行标题 + 一行数据的位置。
 class _SkeletonCard extends StatelessWidget {
   const _SkeletonCard();
 
@@ -130,34 +126,14 @@ class _Block extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = GlassPalette.of(context);
-    final enabled = GlassTheme.of(context).enabled;
+    final dark = context.isDark;
     return FractionallySizedBox(
       widthFactor: width != null && width! > 0 && width! <= 1 ? width : null,
       child: Container(
         height: height,
         decoration: BoxDecoration(
+          color: dark ? const Color(0xFF2A2C31) : const Color(0xFFECEEF1),
           borderRadius: BorderRadius.circular(radius),
-          gradient: enabled
-              ? LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: <Color>[
-                    p.dark
-                        ? Colors.white.withOpacity(0.13)
-                        : Colors.white.withOpacity(0.72),
-                    p.dark
-                        ? Colors.white.withOpacity(0.05)
-                        : const Color(0xFFDDE2F0).withOpacity(0.55),
-                  ],
-                )
-              : null,
-          color: enabled
-              ? null
-              : (p.dark ? const Color(0xFF24262B) : const Color(0xFFE9EBEF)),
-          border: enabled
-              ? Border.all(color: p.dark ? Colors.white10 : Colors.white70)
-              : null,
         ),
       ),
     );
@@ -182,8 +158,8 @@ class ErrorView extends StatelessWidget {
     return Center(
       child: GlassPanel(
         radius: 22,
-        padding: EdgeInsets.symmetric(
-            horizontal: 24, vertical: compact ? 24 : 34),
+        padding:
+            EdgeInsets.symmetric(horizontal: 24, vertical: compact ? 24 : 34),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -242,14 +218,18 @@ class EmptyView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(title,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             if (subtitle.isNotEmpty) ...<Widget>[
               const SizedBox(height: 6),
               Text(subtitle,
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12.5, color: sub, height: 1.5)),
             ],
-            if (action != null) ...<Widget>[const SizedBox(height: 18), action!],
+            if (action != null) ...<Widget>[
+              const SizedBox(height: 18),
+              action!
+            ],
           ],
         ),
       ),
@@ -257,7 +237,7 @@ class EmptyView extends StatelessWidget {
   }
 }
 
-/// 带发光玻璃竖条的小节标题
+/// 带实色短条的小节标题
 class SectionTitle extends StatelessWidget {
   const SectionTitle({Key? key, required this.title, this.trailing})
       : super(key: key);
@@ -278,7 +258,10 @@ class SectionTitle extends StatelessWidget {
           Text(title,
               style:
                   const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
-          if (trailing != null) ...<Widget>[const SizedBox(width: 8), trailing!],
+          if (trailing != null) ...<Widget>[
+            const SizedBox(width: 8),
+            trailing!
+          ],
         ],
       ),
     );

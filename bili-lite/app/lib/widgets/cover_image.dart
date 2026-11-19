@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../core/config.dart';
 import '../core/theme.dart';
+import '../core/tokens.dart';
 
 /// 统一封面组件：走 BFF 图片代理、带加载占位与失败兜底。
+///
+/// 扁平化后占位图与头像边框都是实色，不再有渐变、半透明叠层或阴影。
 class CoverImage extends StatelessWidget {
   const CoverImage({
     Key? key,
@@ -18,10 +21,15 @@ class CoverImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final dark = context.isDark;
     final placeholder = _placeholder(dark);
 
-    if (url.isEmpty) return ClipRRect(borderRadius: BorderRadius.circular(radius), child: placeholder);
+    if (url.isEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: placeholder,
+      );
+    }
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
@@ -35,21 +43,13 @@ class CoverImage extends StatelessWidget {
           if (progress == null) return child;
           return Stack(
             fit: StackFit.expand,
-            children: [
+            children: <Widget>[
               placeholder,
-              Center(
+              const Center(
                 child: SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                        AppColors.pink.withOpacity(0.65)),
-                    value: progress.expectedTotalBytes == null
-                        ? null
-                        : progress.cumulativeBytesLoaded /
-                            progress.expectedTotalBytes!,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
             ],
@@ -62,45 +62,19 @@ class CoverImage extends StatelessWidget {
 
   Widget _placeholder(bool dark) {
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: dark
-              ? const <Color>[Color(0xFF3A4055), Color(0xFF222636), Color(0xFF332941)]
-              : const <Color>[Color(0xFFFFFFFF), Color(0xFFEEF1FA), Color(0xFFFCEFF5)],
+      color: dark ? const Color(0xFF24262B) : const Color(0xFFF1F1F3),
+      child: Center(
+        child: Icon(
+          Icons.image_outlined,
+          size: 26,
+          color: dark ? AppColors.darkLine : AppColors.lightLine,
         ),
-      ),
-      child: Stack(
-        children: <Widget>[
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    Colors.white.withOpacity(dark ? 0.10 : 0.30),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Center(
-            child: Icon(
-              Icons.image_outlined,
-              size: 26,
-              color: dark ? Colors.white24 : Colors.black12,
-            ),
-          ),
-        ],
       ),
     );
   }
 }
 
-/// 圆形头像，URL 为空时用昵称首字兜底
+/// 圆形头像，URL 为空时用昵称首字兜底。
 class UserAvatar extends StatelessWidget {
   const UserAvatar({
     Key? key,
@@ -115,55 +89,38 @@ class UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    if (url.isEmpty) {
-      return CircleAvatar(
-        radius: size / 2,
-        backgroundColor: AppColors.pink.withOpacity(0.16),
-        child: Text(
-          name.isEmpty ? '?' : name.substring(0, 1),
-          style: TextStyle(
-              color: AppColors.pink, fontSize: size * 0.45, fontWeight: FontWeight.w600),
+    final dark = context.isDark;
+    final fallback = CircleAvatar(
+      radius: size / 2,
+      backgroundColor: AppColors.pinkSoft,
+      child: Text(
+        name.isEmpty ? '?' : name.substring(0, 1),
+        style: const TextStyle(
+          color: Color(0xFF18191C),
+          fontWeight: FontWeight.w600,
         ),
-      );
-    }
+      ),
+    );
+    if (url.isEmpty) return fallback;
+
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            Colors.white.withOpacity(dark ? 0.28 : 0.9),
-            Colors.white.withOpacity(dark ? 0.04 : 0.2),
-          ],
+        border: Border.all(
+          color: dark ? AppColors.darkLine : AppColors.lightLine,
+          width: 1,
         ),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-              color: dark
-                  ? Colors.black.withOpacity(0.35)
-                  : const Color(0xFF66588C).withOpacity(0.18),
-              blurRadius: 6,
-              offset: const Offset(0, 2)),
-        ],
       ),
-      padding: const EdgeInsets.all(0.9),
+      padding: const EdgeInsets.all(1),
       child: ClipOval(
         child: Image.network(
           ApiConfig.image(url),
-          width: size - 1.8,
-          height: size - 1.8,
+          width: size - 2,
+          height: size - 2,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => CircleAvatar(
-            radius: (size - 1.8) / 2,
-            backgroundColor: dark ? const Color(0xFF2A2C31) : const Color(0xFFECEEF1),
-            child: Text(
-              name.isEmpty ? '?' : name.substring(0, 1),
-              style: TextStyle(fontSize: size * 0.45, color: AppColors.pink),
-            ),
-          ),
+          errorBuilder: (_, __, ___) => fallback,
         ),
       ),
     );

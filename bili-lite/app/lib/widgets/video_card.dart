@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../core/card_style.dart';
 import '../core/format.dart';
-import '../core/glass_theme.dart';
 import '../core/theme.dart';
 import '../core/tokens.dart';
 import '../data/models.dart';
@@ -10,7 +9,7 @@ import 'cover_image.dart';
 import 'glass.dart';
 import 'glass_text.dart';
 
-/// 自适应网格里的玻璃视频卡片。窄屏 2 列、桌面 5 列共用同一个组件。
+/// 自适应网格里的扁平视频卡片。窄屏 2 列、桌面 5 列共用同一个组件。
 ///
 /// 两种样式（见 [CardStyle]）：
 ///   * [CardStyle.immersive] —— 弹幕数叠在封面左下角，与时长左右呼应，
@@ -24,11 +23,10 @@ import 'glass_text.dart';
 ///     多张卡片的数字左右乱跳，扫读时没有一条稳定的竖向基线；
 ///   * 标题字号 13.5、UP 主名 11.5、时间戳 10.5 三级各差 1~2px，
 ///     但都是「灰色小字」，层级拉不开；
-///   * 标题压在近全透的玻璃上，靠 `shadows` 打光晕补丁保证可读，
-///     但补丁是硬编码的黑/白，在彩色封面上会显脏。
+///   * 标题压在近全透的玻璃上，靠光晕补丁保证可读，在彩色封面上会显脏。
 ///
 /// 现在改成：统计行统一左对齐成一条基线；字号全部改用 [AppFontSize] 的
-/// 语义命名；标题可读性改由 [GlassText] 处理，不再逐处写 shadows。
+/// 语义命名；卡片改为实色容器，标题直接用主题文字色，不再逐处写光晕。
 class VideoCard extends StatefulWidget {
   const VideoCard({
     Key? key,
@@ -55,9 +53,7 @@ class _VideoCardState extends State<VideoCard> {
 
   @override
   Widget build(BuildContext context) {
-    final glass = GlassTheme.of(context).enabled;
-
-    // 悬停 / 按下只影响外层装饰。卡片内容（封面、标题、统计）拆到独立
+    // 按下只影响外层装饰。卡片内容（封面、标题、统计）拆到独立
     // widget 里，避免鼠标划过一屏卡片时把上百棵子树重建一遍。
     return Listener(
       onPointerDown: (_) => setState(() => _pressed = true),
@@ -70,9 +66,7 @@ class _VideoCardState extends State<VideoCard> {
           duration: const Duration(milliseconds: 170),
           curve: Curves.easeOut,
           transformAlignment: Alignment.center,
-          transform: Matrix4.identity()
-            ..translate(0.0, glass && _hover && !_pressed ? -4.0 : 0.0)
-            ..scale(_pressed ? 0.975 : 1.0),
+          transform: Matrix4.identity()..scale(_pressed ? 0.975 : 1.0),
           child: _VideoCardContent(
             video: widget.video,
             rank: widget.rank,
@@ -107,14 +101,11 @@ class _VideoCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final glass = GlassTheme.of(context).enabled;
     final immersive = style == CardStyle.immersive;
 
     return GlassPanel(
       radius: AppRadius.panel,
       padding: const EdgeInsets.all(8),
-      // 内容让位：卡片内部几乎全透，只留一圈折射亮边，让封面成为主体。
-      fillScale: 0.50,
       elevated: elevated,
       onTap: onTap,
       onLongPress: onLongPress,
@@ -125,26 +116,8 @@ class _VideoCardContent extends StatelessWidget {
             aspectRatio: 16 / 9,
             child: Stack(
               children: <Widget>[
-                Positioned.fill(child: CoverImage(url: video.cover, radius: 14)),
-                // 封面底部一层很淡的玻璃反光
                 Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: <Color>[
-                            Colors.white.withOpacity(glass ? 0.10 : 0),
-                            Colors.transparent,
-                            Colors.white.withOpacity(glass ? 0.06 : 0),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                    child: CoverImage(url: video.cover, radius: 14)),
                 // 沉浸式：弹幕数与时长左右呼应，都压在封面底边。
                 if (immersive && video.stat.danmaku > 0)
                   Positioned(
@@ -162,7 +135,8 @@ class _VideoCardContent extends StatelessWidget {
                     child: GlassPill(
                       radius: AppRadius.pill,
                       onDark: true,
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       child: Text(
                         video.durationText,
                         maxLines: 1,
@@ -187,8 +161,8 @@ class _VideoCardContent extends StatelessWidget {
                     child: GlassPill(
                       radius: AppRadius.pill,
                       tint: AppColors.pink,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       child: Text(
                         video.reason,
                         maxLines: 1,
@@ -216,7 +190,8 @@ class _VideoCardContent extends StatelessWidget {
           // UP 主行：头像 + 名字
           Row(
             children: <Widget>[
-              UserAvatar(url: video.owner.face, name: video.owner.name, size: 16),
+              UserAvatar(
+                  url: video.owner.face, name: video.owner.name, size: 16),
               const SizedBox(width: 5),
               Expanded(
                 child: Text(
@@ -276,13 +251,13 @@ class _OverlayBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.52),
+        color: const Color(0xFF18191C),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 10, color: Colors.white.withOpacity(0.92)),
+          Icon(icon, size: 10, color: Colors.white),
           const SizedBox(width: 2),
           Text(
             text,

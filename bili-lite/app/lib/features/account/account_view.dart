@@ -81,8 +81,6 @@ class _AccountCardState extends State<AccountCard> {
               const SizedBox(height: 10),
               _notice(authSession.error, AppStatus.danger),
             ],
-            const SizedBox(height: 12),
-            _boundary(sub),
           ],
         ),
       ),
@@ -279,9 +277,8 @@ class _AccountCardState extends State<AccountCard> {
                     t.isExpired ? '登录已过期，请重新授权' : '已通过官方 OAuth 2.0 授权',
                     style: TextStyle(
                         fontSize: 11.5,
-                        color: t.isExpired
-                            ? AppStatus.danger
-                            : AppStatus.success),
+                        color:
+                            t.isExpired ? AppStatus.danger : AppStatus.success),
                   ),
                 ],
               ),
@@ -344,34 +341,6 @@ class _AccountCardState extends State<AccountCard> {
     );
   }
 
-  Widget _boundary(Color sub) {
-    return GlassPanel(
-      radius: 14,
-      padding: const EdgeInsets.all(11),
-      tint: AppColors.pink.withOpacity(0.08),
-      showSheen: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text('本地数据边界（仅本通道）',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          _text(
-            '官方 OAuth 通道本机保存：access_token、refresh_token、过期时间、'
-            '已授权 scope、openid / 昵称 / 头像；不保存密码、Cookie、'
-            'SESSDATA、bili_jct、client_secret、授权码 code。'
-            'token 由用户在官方页面授权后取得，仅留在本机、不上传。'
-            '注意：主通道（扫码 / 账号密码 / 短信验证码 / Cookie）与官方 OAuth '
-            '不同，四条通道都会保存同一份 B 站 Web 登录 Cookie，'
-            '详见主卡片下方说明。shared_preferences 不是硬件加密存储，'
-            '真机发布建议改用 Keychain / Keystore。',
-            sub,
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _sandboxTag() {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -382,7 +351,9 @@ class _AccountCardState extends State<AccountCard> {
       ),
       child: const Text(
         '演示授权模式 · 非 B 站官方 · 仅用于链路自检',
-        style: TextStyle(fontSize: 11, color: Color(0xFFB95C15),
+        style: TextStyle(
+            fontSize: 11,
+            color: Color(0xFFB95C15),
             fontWeight: FontWeight.w600),
       ),
     );
@@ -413,8 +384,7 @@ class _AccountCardState extends State<AccountCard> {
         children: <Widget>[
           SizedBox(
             width: 72,
-            child: Text(label,
-                style: TextStyle(fontSize: 11.5, color: sub)),
+            child: Text(label, style: TextStyle(fontSize: 11.5, color: sub)),
           ),
           Expanded(
             child: Text(

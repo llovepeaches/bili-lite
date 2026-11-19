@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'tokens.dart';
 
-/// 视觉基调：低饱和极光背景、半透明玻璃容器、克制的粉色点缀。
+/// 视觉基调：纯色背景、实色卡片、黑色文字与图标、浅粉选中态。
 class AppColors {
   AppColors._();
 
@@ -10,9 +10,9 @@ class AppColors {
   static const Color pinkSoft = Color(0xFFFFF0F4);
   static const Color blue = Color(0xFF00AEEC);
 
-  static const Color lightBg = Color(0xFFF4F6FA);
+  static const Color lightBg = Color(0xFFFFFFFF);
   static const Color lightCard = Color(0xFFFFFFFF);
-  static const Color lightLine = Color(0xFFECEEF1);
+  static const Color lightLine = Color(0xFFE6E6E8);
   static const Color lightText = Color(0xFF18191C);
   static const Color lightSub = Color(0xFF666A6E);
 
@@ -54,16 +54,15 @@ class AppTheme {
       brightness: brightness,
       primaryColor: AppColors.pink,
       colorScheme: scheme,
-      // 关键：让 Scaffold 透明，才能看到 app.dart 里铺的极光背景，
-      // 玻璃面板叠在其上形成透射与折射。
-      scaffoldBackgroundColor: Colors.transparent,
+      // 扁平样式：Scaffold / AppBar / 导航容器全部使用不透光的主题底色。
+      scaffoldBackgroundColor: bg,
       cardColor: card,
-      canvasColor: Colors.transparent,
-      dividerColor: dark ? Colors.white12 : Colors.black12,
-      splashColor: AppColors.pink.withOpacity(0.06),
-      highlightColor: AppColors.pink.withOpacity(0.04),
+      canvasColor: bg,
+      dividerColor: line,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
       appBarTheme: AppBarTheme(
-        backgroundColor: Colors.transparent,
+        backgroundColor: bg,
         foregroundColor: text,
         elevation: 0,
         centerTitle: false,
@@ -76,7 +75,7 @@ class AppTheme {
         ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: Colors.transparent,
+        backgroundColor: bg,
         selectedItemColor: AppColors.pink,
         unselectedItemColor: sub,
         type: BottomNavigationBarType.fixed,
@@ -86,7 +85,7 @@ class AppTheme {
         unselectedLabelStyle: const TextStyle(fontSize: 11),
       ),
       navigationRailTheme: NavigationRailThemeData(
-        backgroundColor: Colors.transparent,
+        backgroundColor: bg,
         selectedIconTheme: const IconThemeData(color: AppColors.pink),
         unselectedIconTheme: IconThemeData(color: sub),
         selectedLabelTextStyle: const TextStyle(
@@ -96,15 +95,14 @@ class AppTheme {
         elevation: 0,
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: dark ? Colors.white10 : Colors.white70,
-        selectedColor: AppColors.pink.withOpacity(0.12),
+        backgroundColor: card,
+        selectedColor: AppColors.pinkSoft,
         disabledColor: line,
         labelStyle: TextStyle(color: text, fontSize: AppFontSize.body),
-        secondaryLabelStyle:
-            const TextStyle(color: AppColors.pink, fontSize: AppFontSize.body),
+        secondaryLabelStyle: TextStyle(color: text, fontSize: AppFontSize.body),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        side: BorderSide(color: dark ? Colors.white12 : Colors.white70),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        side: BorderSide(color: dark ? AppColors.darkLine : text),
         brightness: brightness,
       ),
       textTheme: TextTheme(
@@ -123,9 +121,12 @@ class AppTheme {
             fontSize: AppFontSize.bodyLarge,
             fontWeight: FontWeight.w600,
             height: 1.35),
-        bodyLarge: TextStyle(color: text, fontSize: AppFontSize.bodyLarge, height: 1.5),
-        bodyMedium: TextStyle(color: text, fontSize: AppFontSize.body, height: 1.45),
-        bodySmall: TextStyle(color: sub, fontSize: AppFontSize.small, height: 1.4),
+        bodyLarge: TextStyle(
+            color: text, fontSize: AppFontSize.bodyLarge, height: 1.5),
+        bodyMedium:
+            TextStyle(color: text, fontSize: AppFontSize.body, height: 1.45),
+        bodySmall:
+            TextStyle(color: sub, fontSize: AppFontSize.small, height: 1.4),
         labelSmall: TextStyle(color: sub, fontSize: AppFontSize.caption),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -135,27 +136,26 @@ class AppTheme {
             const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
-          borderSide: BorderSide(color: dark ? Colors.white24 : Colors.white),
+          borderSide: BorderSide(color: dark ? AppColors.darkLine : text),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
-          borderSide: BorderSide(color: dark ? Colors.white24 : Colors.white),
+          borderSide: BorderSide(color: dark ? AppColors.darkLine : text),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
           borderSide: const BorderSide(color: AppColors.pink, width: 1.4),
         ),
       ),
-      dividerTheme: DividerThemeData(
-          color: dark ? Colors.white12 : Colors.black12, thickness: 1, space: 1),
+      dividerTheme: DividerThemeData(color: line, thickness: 1, space: 1),
       iconTheme: IconThemeData(color: sub, size: 20),
       dialogTheme: DialogTheme(
-        backgroundColor: dark ? const Color(0xF01F212C) : const Color(0xF8FFFFFF),
+        backgroundColor: dark ? AppColors.darkCard : AppColors.lightCard,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: dark ? const Color(0xF02A2C38) : const Color(0xF5FFFFFF),
+        backgroundColor: dark ? AppColors.darkCard : AppColors.lightCard,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         contentTextStyle: TextStyle(color: text, fontSize: 13),
@@ -163,22 +163,21 @@ class AppTheme {
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.pink,
       ),
-      // 以下一组是上一版完全缺失的：Material 内置控件的默认造型全是
-      // Material 2/3 的老样式，跟这套玻璃视觉对不上（开关是方角小块、
-      // 滑块轨道太细、按钮没有自己的圆角）。
+      // 以下一组统一 Material 内置控件的造型：开关、滑块、按钮都改成
+      // 纯色、实边框、克制圆角，与扁平视觉保持一致。
       //
       // 注意：工程锁在 Flutter 3.0，`FilledButton` 是 Material 3 才引入的，
       // 这里只能用 3.0 里存在的 `raisedButton` / `outlinedButton` / `textButton`。
       switchTheme: SwitchThemeData(
         thumbColor: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.disabled)) {
-            return dark ? const Color(0xFF6A6F76) : const Color(0xFFB9BEC5);
+            return dark ? AppColors.darkLine : AppColors.lightLine;
           }
           return Colors.white;
         }),
         trackColor: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.disabled)) {
-            return dark ? Colors.white10 : Colors.black12;
+            return dark ? AppColors.darkCard : AppColors.lightLine;
           }
           if (states.contains(MaterialState.selected)) {
             return AppColors.pink;
@@ -244,10 +243,11 @@ class AppTheme {
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
-          color: dark ? const Color(0xF0333540) : const Color(0xF22A2C38),
+          color: dark ? AppColors.darkCard : const Color(0xFF2A2C38),
           borderRadius: BorderRadius.circular(AppRadius.chip),
         ),
-        textStyle: const TextStyle(color: Colors.white, fontSize: AppFontSize.caption),
+        textStyle:
+            const TextStyle(color: Colors.white, fontSize: AppFontSize.caption),
       ),
     );
   }

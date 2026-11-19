@@ -53,7 +53,7 @@ void main() {
     test('应用内版本与发布 tag 由同一常量派生', () {
       // 写死版本号是有意的漂移守卫：发版时若忘了改 app_version.dart，
       // 这里会立刻失败，而不是等到 CI 的 Verify version sync 才暴露。
-      expect(kAppVersion, '0.1.4');
+      expect(kAppVersion, '0.1.5');
       // 从 v0.1.4 起，用户可见版本串只显示三段版本号，不拼 +构建号。
       expect(kAppVersionLabel, kAppVersion);
       expect(kAppVersionLabel, isNot(contains('+')));

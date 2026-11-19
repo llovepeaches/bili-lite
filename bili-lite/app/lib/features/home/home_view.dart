@@ -69,8 +69,6 @@ class _HomeViewState extends State<HomeView>
   @override
   Widget build(BuildContext context) {
     // 注意：AnimatedBuilder **只包 body**，不包整个 Scaffold。
-    // 整页重建会让 AppBar 的 flexibleSpace（玻璃条）与卡片表面的高光
-    // 动画反复重播，表现为整页蒙一层白纱、标题被盖住。
     // AppBar 保持静态，只把会变的「数据源」小部件单独订阅。
     return AppPageScaffold(
       titleSpacing: 16,
@@ -112,24 +110,29 @@ class _HomeViewState extends State<HomeView>
           ),
         ),
       ],
-      bottom: TabBar(
-        controller: _tabController,
-        isScrollable: false,
-        indicator: GlassDecorations.tabIndicator(context),
-        indicatorPadding: GlassDecorations.tabIndicatorPadding,
-        indicatorSize: TabBarIndicatorSize.label,
-        labelColor: GlassDecorations.tabLabelColor(context),
-        unselectedLabelColor: GlassDecorations.tabUnselectedLabelColor(context),
-        labelStyle:
-            const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-        unselectedLabelStyle:
-            const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
-        labelPadding: const EdgeInsets.symmetric(horizontal: 18),
-        tabs: const <Widget>[
-          Tab(text: '推荐'),
-          Tab(text: '热门'),
-          Tab(text: '排行榜'),
-        ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(52),
+        child: AnimatedBuilder(
+          animation: _tabController,
+          builder: (context, _) {
+            const List<String> labels = <String>['推荐', '热门', '排行榜'];
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+              child: Row(
+                children: <Widget>[
+                  for (int i = 0; i < labels.length; i++) ...<Widget>[
+                    if (i > 0) const SizedBox(width: 8),
+                    GlassChip(
+                      label: labels[i],
+                      selected: _tabController.index == i,
+                      onTap: () => _tabController.animateTo(i),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
       ),
       body: AnimatedBuilder(
         animation: _controller,

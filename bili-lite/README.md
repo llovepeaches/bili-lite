@@ -128,18 +128,18 @@ flutter build web
 
 | 平台 | Release 资产 |
 | --- | --- |
-| Android | `BiliLite-0.1.4-Android.apk` |
-| Windows | `BiliLite-0.1.4-Windows-Setup.exe` |
-| Web + BFF | `bili-lite-web-v0.1.4.tar.gz` / `.zip` |
-| iOS | `BiliLite-0.1.4-UNSIGNED.ipa`（编译验证）、`BiliLite-0.1.4-iOS-ADHOC.ipa`（ad-hoc 签名） |
-| 源码 | `bili-lite-v0.1.4-src.tar.gz` / `.zip` |
+| Android | `BiliLite-0.1.5-Android.apk` |
+| Windows | `BiliLite-0.1.5-Windows-Setup.exe` |
+| Web + BFF | `bili-lite-web-v0.1.5.tar.gz` / `.zip` |
+| iOS | `BiliLite-0.1.5-UNSIGNED.ipa`（编译验证）、`BiliLite-0.1.5-iOS-ADHOC.ipa`（ad-hoc 签名） |
+| 源码 | `bili-lite-v0.1.5-src.tar.gz` / `.zip` |
 
-最新发行版：[bili-lite-v0.1.4](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v0.1.4)
+最新发行版：[bili-lite-v0.1.5](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v0.1.5)
 
 手动触发一次全平台构建：
 
 ```bash
-gh workflow run build-installers.yml -f release_tag=bili-lite-v0.1.4 -f publish=true -f run_ios=true
+gh workflow run build-installers.yml -f release_tag=bili-lite-v0.1.5 -f publish=true -f run_ios=true
 ```
 
 Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入库），可覆盖升级。
@@ -147,7 +147,7 @@ Android APK 使用正式 release 密钥签名（密钥以 Secret 存放，不入
 iOS 需要加 `-f run_ios=true` 才会构建（macOS runner）：
 
 ```bash
-gh workflow run build-installers.yml -f release_tag=bili-lite-v0.1.4 -f publish=true -f run_ios=true
+gh workflow run build-installers.yml -f release_tag=bili-lite-v0.1.5 -f publish=true -f run_ios=true
 ```
 
 产出 `UNSIGNED.ipa`（编译验证）与 `iOS-ADHOC.ipa`（ad-hoc 自签名，侧载工具可重签）。
@@ -157,16 +157,16 @@ API Key（四个 Secret，见 [iOS 打包指南](docs/iOS打包指南.md)），�
 
 ### 版本规则与更新检查
 
-当前版本 **v0.1.4**（`pubspec.yaml` 为 `0.1.4+5`）。后续发版从这里按语义化版本递增，
+当前版本 **v0.1.5**（`pubspec.yaml` 为 `0.1.5+6`）。后续发版从这里按语义化版本递增，
 **应用内显示的版本必须与发布 tag 一致**；从 v0.1.4 起用户可见版本只显示三段号，
 不再显示 `+构建号`：
 
 | 来源 | 值 |
 | --- | --- |
-| `app/pubspec.yaml` | `version: 0.1.4+5`（内部构建号 5） |
-| `app/lib/core/app_version.dart` | `kAppVersion = '0.1.4'`、`kAppBuildNumber = 5`、`kAppVersionLabel = '0.1.4'` |
-| 自动派生的发布 tag | `bili-lite-v0.1.4` |
-| 设置页「关于 / 版本更新」 | 直接读 `kAppVersionLabel`，显示 `0.1.4`，不再手写 |
+| `app/pubspec.yaml` | `version: 0.1.5+6`（内部构建号 6） |
+| `app/lib/core/app_version.dart` | `kAppVersion = '0.1.5'`、`kAppBuildNumber = 6`、`kAppVersionLabel = '0.1.5'` |
+| 自动派生的发布 tag | `bili-lite-v0.1.5` |
+| 设置页「关于 / 版本更新」 | 直接读 `kAppVersionLabel`，显示 `0.1.5`，不再手写 |
 
 发版只改 `pubspec.yaml` 与 `app_version.dart` 的两个常量，并同步 workflow input 的
 `release_tag` 默认值。CI 的 `Verify version sync` 步骤逐项比对，漏改直接让构建失败——

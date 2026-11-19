@@ -4,7 +4,7 @@ import 'theme.dart';
 
 /// 全局设计令牌。
 ///
-/// 背景：这套 App 的视觉是「玻璃」，但玻璃不等于没有规范。重构前颜色、字号、
+/// 背景：这套 App 的视觉是扁平实色，但扁平不等于没有规范。重构前颜色、字号、
 /// 圆角散落在 30+ 个文件里，同一语义出现多个色值（例如「次要文字」在深色
 /// 模式下有 3 个不同写法），导致同一段文字在不同页面明暗表现不一致。
 ///
@@ -236,19 +236,16 @@ class AppTextColor {
       context.isDark ? const Color(0xFFD1D7DB) : const Color(0xFF666A6E);
 
   /// 三级：辅助信息、占位符、时间戳。浅色 3.87:1，暗色 3.30:1。
-  static Color tertiary(BuildContext context) => context.isDark
-      ? const Color(0xFFB2B2B6)
-      : const Color(0xFF7E8286);
+  static Color tertiary(BuildContext context) =>
+      context.isDark ? const Color(0xFFB2B2B6) : const Color(0xFF7E8286);
 
   /// 四级：禁用、极次要。浅色 2.76:1，暗色 2.30:1。
-  static Color quaternary(BuildContext context) => context.isDark
-      ? const Color(0xFF909596)
-      : const Color(0xFF989CA0);
+  static Color quaternary(BuildContext context) =>
+      context.isDark ? const Color(0xFF909596) : const Color(0xFF989CA0);
 
   /// 五级：占位符、禁用输入框。浅色 2.09:1，暗色 1.60:1。
-  static Color placeholder(BuildContext context) => context.isDark
-      ? const Color(0xFF737A7F)
-      : const Color(0xFFB0B4B8);
+  static Color placeholder(BuildContext context) =>
+      context.isDark ? const Color(0xFF737A7F) : const Color(0xFFB0B4B8);
 }
 
 /// 常用文字组合。

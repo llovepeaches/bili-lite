@@ -18,7 +18,7 @@ on:
       release_tag:
         description: "Release tag to publish assets to"
         required: false
-        default: "bili-lite-v0.1.4"
+        default: "bili-lite-v0.1.5"
       publish:
         description: "Upload artifacts to the GitHub Release"
         required: false
@@ -51,7 +51,7 @@ env:
   FLUTTER_VERSION: ${{ inputs.flutter_version || '3.0.0' }}
   # workflow_dispatch 用 input 默认值；push tag 触发时直接用 tag 名，
   # 这样「后续发版递增版本号」只需改 pubspec + app_version.dart + input 默认值。
-  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name || 'bili-lite-v0.1.4' }}
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name || 'bili-lite-v0.1.5' }}
   PUBLISH: ${{ inputs.publish || 'true' }}
 
 jobs:

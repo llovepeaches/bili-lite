@@ -1,208 +1,64 @@
 import 'package:bililite/core/nav_section.dart';
-import 'package:bililite/features/shell/swipe_deck.dart';
+import 'package:bililite/features/shell/page_stack.dart';
 import 'package:bililite/widgets/liquid_dock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 液态玻璃底栏 + 跟手滑动容器的行为单测。
+/// 扁平底栏与静态内容容器的行为单测。
 ///
-/// 这里固定住三条最容易回归的约定：
-/// 1. 滑动切页时**只有内容区**位移，底栏不在滑动容器内，因此不会跟着动；
-/// 2. 底栏的选中态由 `activeIndex` 决定，与内容区当前页解耦；
-/// 3. 页面切换后旧页面仍然挂载（状态保活），不会像 PageView 那样销毁。
+/// 固定三条约定：
+/// 1. 内容区没有左右滑动切页手势；
+/// 2. 页面切换只由外部导航驱动，旧页面状态仍保留；
+/// 3. 底栏只渲染标签组与独立入口，点按回调对应入口。
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
-  /// 定位**标签行**里的文字标签。
-  ///
-  /// 水滴玻璃只罩住图标，文字标签始终在标签行里，所以每个标签唯一；
-  /// 这里仍限定在 `LiquidGlassDock` 之内，避免误命中页面上的同名文字。
-  Finder tabLabel(String text) => find.descendant(
+  Finder tabLabel(String text) => find
+      .descendant(
         of: find.byType(LiquidGlassDock),
         matching: find.text(text),
-      ).first;
+      )
+      .first;
 
-  group('SwipeDeck', () {
-    testWidgets('左滑切到下一页并回调新下标', (tester) async {
-      final changes = <int>[];
-      final previews = <int>[];
+  group('PageStack', () {
+    testWidgets('左右拖动不会切页，第一页保持原位', (tester) async {
+      await tester.pumpWidget(wrap(const PageStack(
+        index: 0,
+        pages: <Widget>[
+          Center(child: Text('第一页')),
+          Center(child: Text('第二页')),
+        ],
+      )));
 
-      await tester.pumpWidget(wrap(
-        SwipeDeck(
-          index: 0,
-          pages: const <Widget>[
-            ColoredBox(color: Color(0xFFFF0000), child: SizedBox.expand()),
-            ColoredBox(color: Color(0xFF00FF00), child: SizedBox.expand()),
-            ColoredBox(color: Color(0xFF0000FF), child: SizedBox.expand()),
-          ],
-          onIndexChanged: changes.add,
-          onIndexPreview: previews.add,
-        ),
-      ));
-
-      await tester.drag(find.byType(SwipeDeck), const Offset(-400, 0));
+      final Rect before = tester.getRect(find.text('第一页'));
+      await tester.drag(find.byType(PageStack), const Offset(-400, 0));
       await tester.pumpAndSettle();
 
-      expect(changes, <int>[1]);
+      expect(find.text('第一页'), findsOneWidget);
+      expect(tester.getRect(find.text('第一页')), before);
     });
 
-    testWidgets('右滑回上一页', (tester) async {
-      final changes = <int>[];
-
-      await tester.pumpWidget(wrap(
-        SwipeDeck(
-          index: 1,
-          pages: const <Widget>[
-            ColoredBox(color: Color(0xFFFF0000), child: SizedBox.expand()),
-            ColoredBox(color: Color(0xFF00FF00), child: SizedBox.expand()),
-          ],
-          onIndexChanged: changes.add,
-        ),
-      ));
-
-      await tester.drag(find.byType(SwipeDeck), const Offset(400, 0));
-      await tester.pumpAndSettle();
-
-      expect(changes, <int>[0]);
-    });
-
-    testWidgets('拖动不足阈值时回弹，不切页', (tester) async {
-      final changes = <int>[];
-
-      await tester.pumpWidget(wrap(
-        SwipeDeck(
-          index: 0,
-          pages: const <Widget>[
-            ColoredBox(color: Color(0xFFFF0000), child: SizedBox.expand()),
-            ColoredBox(color: Color(0xFF00FF00), child: SizedBox.expand()),
-          ],
-          onIndexChanged: changes.add,
-        ),
-      ));
-
-      await tester.drag(find.byType(SwipeDeck), const Offset(-30, 0));
-      await tester.pumpAndSettle();
-
-      expect(changes, isEmpty);
-    });
-
-    testWidgets('拖动过程中预览下标，吸附后才提交', (tester) async {
-      final changes = <int>[];
-      final previews = <int>[];
-
-      await tester.pumpWidget(wrap(
-        SwipeDeck(
-          index: 0,
-          pages: const <Widget>[
-            ColoredBox(color: Color(0xFFFF0000), child: SizedBox.expand()),
-            ColoredBox(color: Color(0xFF00FF00), child: SizedBox.expand()),
-          ],
-          onIndexChanged: changes.add,
-          onIndexPreview: previews.add,
-        ),
-      ));
-
-      final gesture =
-          await tester.startGesture(tester.getCenter(find.byType(SwipeDeck)));
-      await gesture.moveBy(const Offset(-320, 0));
-      await tester.pump();
-      // 预览已经跟到下一页，但还没提交。
-      expect(previews, contains(1));
-      expect(changes, isEmpty);
-
-      await gesture.up();
-      await tester.pumpAndSettle();
-      expect(changes, <int>[1]);
-    });
-
-    testWidgets('外部改变 index 时内容区滑过去', (tester) async {
-      Widget build(int index) => wrap(
-            SwipeDeck(
-              key: const ValueKey<String>('deck'),
-              index: index,
-              pages: const <Widget>[
-                ColoredBox(color: Color(0xFFFF0000), child: SizedBox.expand()),
-                ColoredBox(color: Color(0xFF00FF00), child: SizedBox.expand()),
-              ],
-              onIndexChanged: (_) {},
-            ),
-          );
+    testWidgets('外部切换页面后旧页面状态仍保留', (tester) async {
+      Widget build(int index) => wrap(PageStack(
+            index: index,
+            pages: <Widget>[
+              const _Counter(),
+              const Center(child: Text('第二页')),
+            ],
+          ));
 
       await tester.pumpWidget(build(0));
-      await tester.pumpWidget(build(1));
-      await tester.pumpAndSettle();
-
-      // 第二页应当已经贴到视口里（绿色在正中）。
-      final green = tester.getRect(find.byWidgetPredicate(
-        (w) => w is ColoredBox && w.color == const Color(0xFF00FF00),
-      ));
-      expect(green.left, closeTo(0, 1));
-    });
-
-    testWidgets('旧页面保持挂载，状态不丢', (tester) async {
-      await tester.pumpWidget(wrap(
-        SwipeDeck(
-          index: 0,
-          pages: <Widget>[
-            const _Counter(),
-            const ColoredBox(color: Color(0xFF00FF00), child: SizedBox.expand()),
-          ],
-          onIndexChanged: (_) {},
-        ),
-      ));
-
-      // 在第一页里点一下计数器。
       await tester.tap(find.byType(ElevatedButton));
       await tester.pump();
       expect(find.text('1'), findsOneWidget);
 
-      // 切到第二页再切回来，计数应当还在。
-      await tester.drag(find.byType(SwipeDeck), const Offset(-400, 0));
+      await tester.pumpWidget(build(1));
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(SwipeDeck), const Offset(400, 0));
-      await tester.pumpAndSettle();
+      expect(find.text('第二页'), findsOneWidget);
 
+      await tester.pumpWidget(build(0));
+      await tester.pumpAndSettle();
       expect(find.text('1'), findsOneWidget);
-    });
-  });
-
-  group('SwipeDeck 边界', () {
-    testWidgets('第一页继续右滑不会越界', (tester) async {
-      final changes = <int>[];
-      await tester.pumpWidget(wrap(
-        SwipeDeck(
-          index: 0,
-          pages: List<Widget>.generate(3, (i) => const ColoredBox(
-            color: Color(0xFFFF0000),
-            child: SizedBox.expand(),
-          )),
-          onIndexChanged: changes.add,
-        ),
-      ));
-
-      await tester.drag(find.byType(SwipeDeck), const Offset(400, 0));
-      await tester.pumpAndSettle();
-
-      expect(changes, isEmpty);
-    });
-
-    testWidgets('最后一页继续左滑不会越界', (tester) async {
-      final changes = <int>[];
-      await tester.pumpWidget(wrap(
-        SwipeDeck(
-          index: 2,
-          pages: List<Widget>.generate(3, (i) => const ColoredBox(
-            color: Color(0xFFFF0000),
-            child: SizedBox.expand(),
-          )),
-          onIndexChanged: changes.add,
-        ),
-      ));
-
-      await tester.drag(find.byType(SwipeDeck), const Offset(-400, 0));
-      await tester.pumpAndSettle();
-
-      expect(changes, isEmpty);
     });
   });
 
@@ -224,14 +80,9 @@ void main() {
         ),
       ));
 
-      // 胶囊里有标签组的三项。
-      //
-      // 水滴玻璃**只罩图标**，文字标签留在标签行里，
-      // 所以每个标签在整个底栏里只出现一次。
       expect(find.text('首页'), findsOneWidget);
       expect(find.text('我的'), findsOneWidget);
       expect(find.text('设置'), findsOneWidget);
-      // 搜索不在胶囊里，它是右侧那枚独立按钮。
       expect(find.text('搜索'), findsNothing);
       expect(find.byIcon(AppSection.search.icon), findsOneWidget);
     });
@@ -266,7 +117,7 @@ void main() {
       expect(picked, <AppSection>[AppSection.search]);
     });
 
-    testWidgets('选中独立入口时用粉色透镜图标', (tester) async {
+    testWidgets('选中独立入口时用对应图标', (tester) async {
       await tester.pumpWidget(wrap(
         const LiquidGlassDock(
           tabs: tabs,

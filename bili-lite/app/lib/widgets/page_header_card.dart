@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/tokens.dart';
 import 'glass.dart';
 
-/// 页面顶部的玻璃信息卡片：标题 + 计数 + 副标题 + 右侧操作。
+/// 页面顶部的信息卡片：标题 + 计数 + 副标题 + 右侧操作。
 ///
 /// 重构前首页（`_buildHeader`）、我的页、搜索页各自写了一遍
 /// `GlassPanel(radius: 20, padding: fromLTRB(14,14,14,12))` + `Row(标题 + 计数
@@ -55,12 +55,15 @@ class PageHeaderCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: AppFontSize.title, fontWeight: FontWeight.w700),
+                        fontSize: AppFontSize.title,
+                        fontWeight: FontWeight.w700),
                   ),
                 ),
                 if (count != null && count!.isNotEmpty) ...<Widget>[
                   const SizedBox(width: AppSpacing.sm),
-                  Text(count!, style: TextStyle(fontSize: AppFontSize.caption, color: sub)),
+                  Text(count!,
+                      style:
+                          TextStyle(fontSize: AppFontSize.caption, color: sub)),
                 ],
                 const Spacer(),
                 if (trailing != null) trailing!,

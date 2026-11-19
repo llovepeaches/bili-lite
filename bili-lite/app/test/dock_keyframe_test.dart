@@ -8,19 +8,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 底栏水滴透镜的**动效关键帧**验收。
+/// 扁平底栏的视觉验收图。
 ///
-/// 为什么用测试而不是截图脚本：
-///
-/// * 屏幕抓图的延迟在 500ms 量级，而水滴的飞行只有几百毫秒 —— 抓图**抓不到**中间帧；
-/// * `flutter_test` 里可以精确控制时间：`tester.pump(Duration(...))`
-///   把动画推进到指定的时刻，于是每一帧都是**确定性的**。
-///
-/// 实现上的一个坑：`RenderRepaintBoundary.toImage()` 在同一个测试里连着调
-/// 多次会**死锁**（Skia 的 raster 线程等一个已经被消费的 future）。
-/// 所以这里把每一帧拆成**独立的 testWidgets**，每个用例只栅格化一次。
-///
-/// 产出的图在仓库的 `docs/preview/` 下，命名 `101-r21-keyframe-*.png`。
+/// 用 `flutter_test` 栅格化而不是手机截图：时间确定、不会抓到过渡中间帧。
+/// 每张图只栅格化一次，避免同一个测试里多次 `toImage()` 死锁。
 void main() {
   final List<AppSection> tabs = <AppSection>[
     AppSection.home,
@@ -41,20 +32,25 @@ void main() {
     Brightness brightness = Brightness.light,
   }) {
     return MaterialApp(
-      theme: ThemeData(brightness: brightness),
+      theme: ThemeData(
+        brightness: brightness,
+        scaffoldBackgroundColor: brightness == Brightness.dark
+            ? const Color(0xFF111319)
+            : Colors.white,
+      ),
       home: Scaffold(
         body: Column(
           children: <Widget>[
             const Expanded(child: SizedBox.shrink()),
             RepaintBoundary(
               key: const Key('dock-capture'),
-              // 高度要给足：抬起态的玻璃珠会**顶出胶囊上沿**，
-              // 捕获区域太矮的话珠顶会被裁掉，看不出完整形态。
-              // 底栏靠下对齐，把上方空间留给那颗珠子。
               child: SizedBox(
                 width: width,
-                height: 150,
-                child: Align(alignment: Alignment.bottomCenter, child: child),
+                height: 110,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: child,
+                ),
               ),
             ),
           ],
@@ -63,15 +59,6 @@ void main() {
     );
   }
 
-  /// 把当前渲染结果写成 PNG。
-  ///
-  /// 必须包在 `tester.runAsync()` 里 —— `toImage()` 是真正的异步 IO
-  /// （要等 Skia 的 raster 线程回图），而 `testWidgets` 的默认环境是
-  /// **假时钟**：直接 await 它会永远等下去（实测：第一个用例能出图，
-  /// 第二个就卡死）。
-  ///
-  /// `runAsync` 会切到真实的 event loop，假时钟的约束不生效，
-  /// 于是栅格化能正常完成。
   Future<void> dump(WidgetTester tester, String name) async {
     final RenderRepaintBoundary boundary =
         tester.renderObject<RenderRepaintBoundary>(
@@ -84,145 +71,65 @@ void main() {
           await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
       if (data == null) return;
-      // 输出到仓库根的 `docs/preview/`（与历史各轮预览图同目录）。
-      // flutter test 的工作目录是 `app/`，所以这里要往上一级走。
       final File file = File('../docs/preview/$name.png');
       file.parent.createSync(recursive: true);
       file.writeAsBytesSync(data.buffer.asUint8List());
     });
   }
 
-  /// 推进到第 [step] 个关键帧并截图。
-  ///
-  /// [step] 为 0 表示静止态（动画已结束），> 0 表示飞行开始后第 step 个 40ms 帧。
-  Future<void> captureFlight(WidgetTester tester, int step) async {
-    await tester.pumpWidget(wrap(dockFor(AppSection.home)));
-    // 先让静止态落定。
-    await tester.pump(const Duration(milliseconds: 600));
-
-    // 切换选中项 → 水滴飞向第三个 tab。
-    await tester.pumpWidget(wrap(dockFor(AppSection.settings)));
-
-    for (int i = 0; i < step; i++) {
-      await tester.pump(const Duration(milliseconds: 40));
-    }
-
-    await dump(
-      tester,
-      step == 0 ? '101-r21-keyframe-rest' : '101-r21-keyframe-$step',
-    );
-  }
-
-  testWidgets('关键帧 0：静止态', (WidgetTester tester) async {
-    await captureFlight(tester, 0);
-  });
-
-  testWidgets('关键帧 1：刚起飞', (WidgetTester tester) async {
-    await captureFlight(tester, 1);
-  });
-
-  testWidgets('关键帧 2：飞行中（拉伸）', (WidgetTester tester) async {
-    await captureFlight(tester, 2);
-  });
-
-  testWidgets('关键帧 4：飞行中段', (WidgetTester tester) async {
-    await captureFlight(tester, 4);
-  });
-
-  testWidgets('关键帧 6：接近落位（压扁）', (WidgetTester tester) async {
-    await captureFlight(tester, 6);
-  });
-
-  testWidgets('关键帧 8：落位回弹', (WidgetTester tester) async {
-    await captureFlight(tester, 8);
-  });
-
-  /// 拖动擦洗的关键帧：按住底栏横向拖动，水滴应当**跟手**移动。
-  ///
-  /// 擦洗途中那颗**大号玻璃透镜**是抬起态的产物：
-  /// 它顶出胶囊上沿、罩住相邻图标、边缘带彩虹色散。
-  Future<void> captureScrub(WidgetTester tester, int step) async {
-    await tester.pumpWidget(wrap(dockFor(AppSection.home)));
-    await tester.pump(const Duration(milliseconds: 600));
-
-    // 按在**胶囊**上，而不是整个底栏（底栏右边还挂着一枚独立的搜索按钮，
-    // 用整个 widget 的中心会偏右，拖出胶囊范围）。
-    final TestGesture gesture = await tester.startGesture(
-      tester.getTopLeft(find.byType(LiquidGlassDock)) + const Offset(60, 48),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-
-    for (int i = 0; i < step; i++) {
-      await gesture.moveBy(const Offset(60, 0));
-      await tester.pump(const Duration(milliseconds: 40));
-    }
-
-    await dump(tester, '102-r21-scrub-$step');
-
-    await gesture.up();
-    await tester.pump(const Duration(milliseconds: 800));
-  }
-
-  testWidgets('擦洗关键帧 1：拖动中（水滴跟手）', (WidgetTester tester) async {
-    await captureScrub(tester, 1);
-  });
-
-  testWidgets('擦洗关键帧 3：拖到第二个 tab', (WidgetTester tester) async {
-    await captureScrub(tester, 3);
-  });
-
-  testWidgets('擦洗关键帧 5：拖到第三个 tab', (WidgetTester tester) async {
-    await captureScrub(tester, 5);
-  });
-
-  /// 参考式选中态的**静态验收图**：按住并拖动第一个 tab，等弹簧收敛。
-  ///
-  /// 对齐 AndroidLiquidGlass `LiquidBottomTabs`：选中胶囊常驻、跟手、
-  /// 按下放大、带色散彩边；这里用「拖过阈值并保持按住」把它推进到按压态。
-  Future<void> captureLift(
+  Future<void> capture(
     WidgetTester tester,
     String name, {
     Brightness brightness = Brightness.light,
     double width = 360,
+    bool pressed = false,
   }) async {
     await tester.pumpWidget(wrap(
       dockFor(AppSection.home),
       width: width,
       brightness: brightness,
     ));
-    for (int i = 0; i < 40; i++) {
+    for (int i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
 
-    // 拖过擦洗阈值并保持手指不松开，让选中胶囊进入按压态。
-    final TestGesture gesture = await tester.startGesture(
-      tester.getTopLeft(find.byType(LiquidGlassDock)) + const Offset(60, 48),
-    );
-    await gesture.moveBy(const Offset(24, 0));
-    // 逐帧推进，让按压 / 速度弹簧真正收敛。
-    for (int i = 0; i < 40; i++) {
-      await tester.pump(const Duration(milliseconds: 16));
+    TestGesture? gesture;
+    if (pressed) {
+      gesture = await tester.startGesture(
+        tester.getTopLeft(find.byType(LiquidGlassDock)) + const Offset(60, 48),
+      );
+      await gesture.moveBy(const Offset(18, 0));
+      for (int i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
     }
 
     await dump(tester, name);
 
-    await gesture.up();
-    await tester.pump(const Duration(milliseconds: 800));
+    if (gesture != null) {
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
   }
 
-  testWidgets('验收图 1：浅色按压态', (WidgetTester tester) async {
-    await captureLift(tester, '103-r21-lift-light');
+  testWidgets('验收图 1：浅色静止态', (tester) async {
+    await capture(tester, '106-flat-dock-light');
   });
 
-  testWidgets('验收图 2：深色按压态', (WidgetTester tester) async {
-    await captureLift(
+  testWidgets('验收图 2：深色静止态', (tester) async {
+    await capture(
       tester,
-      '104-r21-lift-dark',
+      '107-flat-dock-dark',
       brightness: Brightness.dark,
     );
   });
 
-  testWidgets('验收图 3：窄屏（340pt）按压态', (WidgetTester tester) async {
-    await captureLift(tester, '105-r21-lift-narrow', width: 340);
+  testWidgets('验收图 3：340pt 窄屏按压态', (tester) async {
+    await capture(
+      tester,
+      '108-flat-dock-narrow',
+      width: 340,
+      pressed: true,
+    );
   });
 }

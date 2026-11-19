@@ -3,15 +3,12 @@ import 'package:bililite/widgets/liquid_dock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 底栏的**响应式对齐**与**触控区**回归测试。
+/// 扁平底栏的**响应式对齐**与**触控区**回归测试。
 ///
-/// 这一轮底栏做了三处结构性改动，任何一处都可能让窄屏下的排布跑偏：
-///
-/// 1. **统一度量** —— 图标槽、水滴玻璃珠、标签行改为同一套尺寸派生；
-/// 2. **窄屏保护** —— 右侧圆形按钮可以被压缩，保证标签组每个 tab
-///    至少分到 44pt；
-/// 3. **折射放大预算** —— 抬起态的玻璃珠会**顶出胶囊上沿**，
-///    标签行那份图标不受影响，缩放只作用在玻璃珠内部。
+/// 玻璃已移除，但窄屏下的排布约定仍需固定：
+/// 1. 标签组均分左侧区域，每个 tab 保留足够触控宽度；
+/// 2. 右侧独立入口不挤压标签文字；
+/// 3. compact 模式只收起文字，不裁掉图标。
 ///
 /// 这里不测整个 `ShellPage`（它依赖全局 `prefs`），
 /// 而是直接测底栏自身在各种宽度下的几何。
@@ -91,8 +88,7 @@ void main() {
     // 直接量图标所在格子的横向跨度：
     // 相邻两个 tab 的图标中心之差就是每格的宽度。
     final List<Rect> icons = labelIcons(tester, AppSection.home.selectedIcon);
-    final List<Rect> libraryIcons =
-        labelIcons(tester, AppSection.library.icon);
+    final List<Rect> libraryIcons = labelIcons(tester, AppSection.library.icon);
     expect(icons, isNotEmpty);
     expect(libraryIcons, isNotEmpty);
 
@@ -140,8 +136,7 @@ void main() {
       await tester.pump();
 
       final Rect dockRect = tester.getRect(find.byType(LiquidGlassDock));
-      final List<Rect> icons =
-          labelIcons(tester, AppSection.home.selectedIcon);
+      final List<Rect> icons = labelIcons(tester, AppSection.home.selectedIcon);
       for (final Rect r in icons) {
         expect(
           dockRect.top,
@@ -157,36 +152,28 @@ void main() {
     }
   });
 
-  testWidgets('不同宽度下水滴玻璃珠的横向位置与对应 tab 对齐', (
+  testWidgets('不同宽度下选中块的横向位置与对应 tab 对齐', (
     WidgetTester tester,
   ) async {
     for (final double width in <double>[320, 375, 414, 768]) {
       await tester.pumpWidget(build(width: width));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      final List<Rect> icons =
-          labelIcons(tester, AppSection.home.selectedIcon);
+      final List<Rect> icons = labelIcons(tester, AppSection.home.selectedIcon);
       expect(icons, isNotEmpty);
 
-      // 底栏在测试里被 Align 居中，所以胶囊的左边界要相对
-      // **底栏实际左边界**来算，而不是屏幕左边界。
       final Rect dockRect = tester.getRect(find.byType(LiquidGlassDock));
+      final Rect selection =
+          tester.getRect(find.byKey(LiquidGlassDock.selectionKey));
 
-      // 胶囊左侧的起点：底栏画布有 14pt 的外边距（_pad），
-      // 右侧圆形按钮再占掉一段。
-      //
-      // 注意胶囊是画在**画布**上的，画布整体往左上挪了 _pad，
-      // 所以胶囊的实际左边界 = dockRect.left（画布左移抵消了偏移）。
-      final double buttonSize = 58.0;
-      final double gap = 10.0;
-      final double capsuleLeft = dockRect.left;
-      final double capsuleWidth = width - gap - buttonSize;
-      final double cellWidth = capsuleWidth / threeTabs.length;
-      final double center = icons.first.center.dx;
       expect(
-        center,
-        closeTo(capsuleLeft + cellWidth / 2, 2.0),
-        reason: '宽度 $width 下第一个 tab 的位置偏移过大：$center',
+        selection.center.dx,
+        closeTo(icons.first.center.dx, 2.0),
+        reason: '宽度 $width 下选中块没有对齐第一个 tab：$selection',
+      );
+      expect(
+        icons.first.center.dx,
+        lessThan(dockRect.right),
       );
     }
   });
@@ -198,8 +185,7 @@ void main() {
     expect(find.text('首页'), findsNothing);
 
     final Rect dockRect = tester.getRect(find.byType(LiquidGlassDock));
-    final List<Rect> icons =
-        labelIcons(tester, AppSection.home.selectedIcon);
+    final List<Rect> icons = labelIcons(tester, AppSection.home.selectedIcon);
     expect(icons, isNotEmpty);
     for (final Rect r in icons) {
       expect(
