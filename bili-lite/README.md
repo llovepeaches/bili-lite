@@ -128,13 +128,13 @@ flutter build web
 
 | 平台 | Release 资产 |
 | --- | --- |
-| Android | `BiliLite-0.1.0-Android.apk` |
-| Windows | `BiliLite-0.1.0-Windows-Setup.exe` |
-| Web + BFF | `bili-lite-web-v0.1.0.tar.gz` / `.zip` |
-| iOS | `BiliLite-0.1.0-UNSIGNED.ipa`（编译验证）、`BiliLite-0.1.0-iOS-ADHOC.ipa`（ad-hoc 签名） |
-| 源码 | `bili-lite-v0.1.0-src.tar.gz` / `.zip` |
+| Android | `BiliLite-0.1.3-Android.apk` |
+| Windows | `BiliLite-0.1.3-Windows-Setup.exe` |
+| Web + BFF | `bili-lite-web-v0.1.3.tar.gz` / `.zip` |
+| iOS | `BiliLite-0.1.3-UNSIGNED.ipa`（编译验证）、`BiliLite-0.1.3-iOS-ADHOC.ipa`（ad-hoc 签名） |
+| 源码 | `bili-lite-v0.1.3-src.tar.gz` / `.zip` |
 
-最新发行版：[bili-lite-v0.1.0](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v0.1.0)
+最新发行版：[bili-lite-v0.1.3](https://github.com/llovepeaches/bili-lite/releases/tag/bili-lite-v0.1.3)
 
 手动触发一次全平台构建：
 
@@ -157,14 +157,14 @@ API Key（四个 Secret，见 [iOS 打包指南](docs/iOS打包指南.md)），�
 
 ### 版本规则与更新检查
 
-当前版本 **v0.1.2**（`pubspec.yaml` 为 `0.1.2+3`）。后续发版从这里按语义化版本递增，
+当前版本 **v0.1.3**（`pubspec.yaml` 为 `0.1.3+4`）。后续发版从这里按语义化版本递增，
 **应用内显示的版本必须与发布 tag 一致**：
 
 | 来源 | 值 |
 | --- | --- |
-| `app/pubspec.yaml` | `version: 0.1.2+3` |
-| `app/lib/core/app_version.dart` | `kAppVersion = '0.1.2'`、`kAppBuildNumber = 3` |
-| 自动派生的发布 tag | `bili-lite-v0.1.2` |
+| `app/pubspec.yaml` | `version: 0.1.3+4` |
+| `app/lib/core/app_version.dart` | `kAppVersion = '0.1.3'`、`kAppBuildNumber = 4` |
+| 自动派生的发布 tag | `bili-lite-v0.1.3` |
 | 设置页「关于 / 版本更新」 | 直接读同一常量，不再手写 |
 
 发版只改 `pubspec.yaml` 与 `app_version.dart` 的两个常量，并同步 workflow input 的

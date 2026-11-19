@@ -53,7 +53,7 @@ void main() {
     test('应用内版本与发布 tag 由同一常量派生', () {
       // 写死版本号是有意的漂移守卫：发版时若忘了改 app_version.dart，
       // 这里会立刻失败，而不是等到 CI 的 Verify version sync 才暴露。
-      expect(kAppVersion, '0.1.2');
+      expect(kAppVersion, '0.1.3');
       expect(kAppVersionLabel, '$kAppVersion+$kAppBuildNumber');
       expect(kReleaseTag, 'bili-lite-v$kAppVersion');
       expect(versionFromTag(kReleaseTag), kAppVersion);

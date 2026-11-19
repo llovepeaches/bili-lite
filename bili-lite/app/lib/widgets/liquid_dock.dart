@@ -79,12 +79,20 @@ class LiquidGlassDock extends StatelessWidget {
   /// 向下滚动内容时底栏收起，把屏幕空间还给内容。
   final bool compact;
 
-  /// 玻璃里那一份「折射像」标签的 key。
+  /// 标签行里那一份（真正可交互的）文字标签的 key。
   ///
   /// 底栏上每个 tab 的文字会出现两次：一次在标签行里（真正可交互的那个），
   /// 一次在水滴玻璃底下（折射像，只是视觉）。
   /// 测试要精确定位标签行里的那个时，用这个 key 排除折射像。
-  static Key get dropLabelKey => _DropContent.labelKey;
+  /// 因为每个 tab 各有一个，所以按下标区分。
+  static Key dropLabelKey(int index) => Key('glass-drop-label-$index');
+
+  /// 胶囊本体的 key。
+  ///
+  /// 测试要验证「透镜顶出胶囊上沿」这类几何关系时，
+  /// 需要一个**精确的胶囊矩形**做基准 —— 光晕的顶边不��拿来当代理
+  /// （光晕比图标槽高，顶边天然高出胶囊 4.5pt）。
+  static const Key capsuleKey = Key('glass-dock-capsule');
 
   @override
   Widget build(BuildContext context) {
@@ -420,6 +428,16 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
       flow: capsuleFlow,
     );
 
+    // ---- 统一度量 ----
+    //
+    // 图标槽、光晕、透镜三者的尺寸全部从这里派生，
+    // 避免「光晕按 A 算、透镜按 B 算」导致的对不齐。
+    final _DockMetrics metrics = _DockMetrics(
+      height: widget.capsuleHeight,
+      itemWidth: widget.tabs.isEmpty ? 0 : capsuleWidth / widget.tabs.length,
+      compact: widget.compact,
+    );
+
     final Widget capsuleContent = _CapsuleContent(
       tabs: widget.tabs,
       active: widget.active,
@@ -427,6 +445,22 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
       height: widget.capsuleHeight,
       motion: _drop,
       compact: widget.compact,
+      metrics: metrics,
+    );
+
+    // ---- 透镜层 ----
+    //
+    // 关键：透镜画在胶囊的 `ClipPath` **之外**。
+    //
+    // 参考图（抬起态）里那枚透镜是**顶出胶囊上沿**的 ——
+    // 它是浮在整条底栏之上的一颗玻璃珠，而不是胶囊内部的一段。
+    // 画在 ClipPath 里面就永远顶不出去，所以这一层必须独立。
+    final Widget lensOverlay = _LensOverlay(
+      motion: _drop,
+      tabs: widget.tabs,
+      metrics: metrics,
+      capsuleRect: capsuleRect,
+      accent: AppColors.pink,
     );
 
     // ---- 拖动擦洗 ----
@@ -632,6 +666,7 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
 
               // 表面层与内容：画在玻璃之上（这一层不参与采样）。
               Positioned.fromRect(
+                key: LiquidGlassDock.capsuleKey,
                 rect: capsuleRect,
                 child: ClipPath(
                   clipper: PathClipper(GlassShape.capsule(capsuleRect)),
@@ -668,6 +703,16 @@ class _GlassDockState extends State<_GlassDock> with TickerProviderStateMixin {
                   rect: circleRect,
                   child: ClipOval(child: circleContent),
                 ),
+
+              // ---- 透镜层 ----
+              //
+              // 必须画在**胶囊的 ClipPath 之外**：
+              // 参考图（抬起态）里那枚大玻璃珠是**顶出胶囊上沿**的，
+              // 它浮在整条底栏之上。
+              //
+              // 放在胶囊的裁剪层里就永远顶不出去 ——
+              // 那正是上一版「水滴只在栏内滑动」观感的根源。
+              Positioned.fill(child: lensOverlay),
             ],
           ),
         ),
@@ -1094,6 +1139,63 @@ const double _dockVisualNudge = 1.5;
 /// 而图标槽（玻璃珠罩住的范围）约 34~38pt。
 double _dockIconSize(double iconBox) => (iconBox * 0.60).clamp(18.0, 24.0);
 
+/// 底栏排布的**统一度量**。
+///
+/// 图标槽、标签行、柔边光晕、透镜四者都从这一套派生，
+/// 避免「光晕按 A 算、透镜按 B 算」这种对不齐的经典问题。
+class _DockMetrics {
+  const _DockMetrics({
+    required this.height,
+    required this.itemWidth,
+    required this.compact,
+  });
+
+  /// 胶囊高度。
+  final double height;
+
+  /// 单个 tab 的可用宽度。
+  final double itemWidth;
+
+  /// compact 模式：标签收起。
+  final bool compact;
+
+  /// 标签块高度（文字行高 + 图标与文字的间距）。
+  double get labelBlock => compact ? 0.0 : _dockLabelHeight + _dockLabelGap;
+
+  /// 图标槽边长（正方形）。
+  double get iconBox => _dockIconBox(
+        height: height,
+        itemWidth: itemWidth,
+        withLabel: !compact,
+      );
+
+  /// 图标尺寸。
+  double get iconSize => _dockIconSize(iconBox);
+
+  /// 「图标槽 + 标签行」整组相对胶囊顶部的偏移。
+  double get stackTop =>
+      (height - (iconBox + labelBlock)) / 2 - _dockVisualNudge;
+
+  /// 柔边光晕（platter）的尺寸。
+  ///
+  /// 横向比图标槽宽 70% —— 参考图里那团光是「托着」图标与文字的，
+  /// 比图标本身大一圈。
+  double get glowWidth => iconBox * 1.70;
+
+  /// 纵向：光晕要罩住**图标 + 文字**整组（参考图1 的光团下缘
+  /// 已经压到标签上了），高度取整组高度。
+  double get glowHeight => iconBox + labelBlock;
+
+  /// 抬起态透镜的边长。
+  ///
+  /// 比图标槽大 35%：参考图里那枚透镜明显盖过了相邻的图标，
+  /// 是一颗「浮在底栏之上」的玻璃珠，而不是图标旁边多了一块玻璃。
+  double get lensSize => iconBox * _dockLensScale;
+}
+
+/// 抬起态透镜相对图标槽的放大倍数。
+const double _dockLensScale = 1.35;
+
 /// 胶囊内部：iOS 式水滴透镜 + 图标文字。
 ///
 /// 这一版把旧版的「粉色圆角方块指示器」换成了 iOS 26/27 的**玻璃水滴**：
@@ -1112,6 +1214,7 @@ class _CapsuleContent extends StatefulWidget {
     required this.height,
     required this.motion,
     required this.compact,
+    required this.metrics,
   });
 
   final List<AppSection> tabs;
@@ -1125,6 +1228,9 @@ class _CapsuleContent extends StatefulWidget {
   /// compact 模式：标签收起，只留图标（iOS 26 的
   /// `.tabBarMinimizeBehavior(.onScrollDown)`）。
   final bool compact;
+
+  /// 统一度量。
+  final _DockMetrics metrics;
 
   @override
   State<_CapsuleContent> createState() => _CapsuleContentState();
@@ -1165,6 +1271,16 @@ class _CapsuleContentState extends State<_CapsuleContent>
     super.dispose();
   }
 
+  /// 当前选中项在标签组里的下标。
+  ///
+  /// 找不到时回落到 0 —— 首帧时 `active` 可能还没定下来。
+  int _activeIndex(List<AppSection> tabs) {
+    final AppSection? active = widget.active;
+    if (active == null) return 0;
+    final int index = tabs.indexOf(active);
+    return index < 0 ? 0 : index;
+  }
+
   /// 手指按下。
   void _handleDown(int index, Offset local) {
     setState(() {
@@ -1203,45 +1319,12 @@ class _CapsuleContentState extends State<_CapsuleContent>
       // 一套度量，三个用途
       // ---------------------------------------------------------------
       //
-      // 上一版这里有**两套**互不相干的尺寸：
-      //
-      // * `lensSize` —— 图标槽的高度，喂给 `SizedBox(height: lensSize)`；
-      // * `dropHeight` —— 水滴玻璃珠的高度，另外算一遍。
-      //
-      // 两者一旦不一致，图标就会偏离水滴的中心，
-      // 标签也会跟着错位（见 `docs/preview/50-r7-home.png`）。
-      //
-      // 现在只有一套：`iconBox` 是图标槽的边长（正方形），
-      // 水滴、图标、标签三者都从它派生。
-      //
-      // 尺寸约束：
-      //
-      // * 图标槽不能超过「胶囊高度 − 标签行 − 间距」；
-      // * 也不能超过 tab 的可用宽度（否则相邻水滴会撞上）；
-      // * 最小 26 —— 再小图标就糊了。
-      final double labelBlock =
-          compact ? 0.0 : _dockLabelHeight + _dockLabelGap;
-      final double iconBox = _dockIconBox(
-        height: height,
-        itemWidth: itemWidth,
-        withLabel: !compact,
-      );
-      final double iconSize = _dockIconSize(iconBox);
-
-      // 水滴玻璃珠：正好罩住图标槽（再留 1pt 让边缘光不被裁掉）。
-      final double dropWidth = math.min(iconBox, math.max(26.0, itemWidth - 10.0));
-      final double dropHeight = iconBox;
-
-      // 图标槽 + 标签行整体的垂直居中偏移。
-      //
-      // iOS 的做法不是简单地把「图标 + 文字」当一个盒子居中，
-      // 而是**图标偏上、文字偏下** —— 因为水滴玻璃珠抬起时会往上飞，
-      // 视觉重心需要往上留一点余量。
-      final double stackHeight = dropHeight + labelBlock;
-      // 10.5pt 的字在 1.1 行高里偏下，整组要再往上提一点点，
-      // 否则文字会贴住胶囊底边。
-      final double stackTop =
-          (height - stackHeight) / 2 - _dockVisualNudge;
+      // 图标槽、柔边光晕、大透镜全部从 [widget.metrics] 派生，
+      // 避免「光晕按 A 算、透镜按 B 算」这种对不齐。
+      final _DockMetrics m = widget.metrics;
+      final double iconBox = m.iconBox;
+      final double iconSize = m.iconSize;
+      final double stackTop = m.stackTop;
 
       // 把每个 tab 的中心 x 交给运动模型 —— 拖动擦洗要靠它算最近目标。
       //
@@ -1253,38 +1336,89 @@ class _CapsuleContentState extends State<_CapsuleContent>
       );
       motion.setCenters(centers);
 
+      // 首帧（以及胶囊宽度变化后）把水滴对齐到当前选中项。
+      motion.ensureIndex(_activeIndex(tabs));
+
+      // ---------------------------------------------------------------
+      // 抬起态：玻璃珠的覆盖范围
+      // ---------------------------------------------------------------
+      //
+      // 玻璃珠画在胶囊裁剪层**之外**，所以它会盖住底栏里的图标。
+      // 珠子里那份放大像就是这个图标的「替身」，
+      // 底栏里的原件必须让位 —— 否则两者叠在一起就是「双影」。
+      //
+      // 判定用**几何**而不是下标：珠子跟着手指走，
+      // 未必正好压在某个 tab 的图标上；
+      // 按几何算，谁被罩住谁让位，才不会漏。
+      //
+      // 注意：下面这些量必须在 [AnimatedBuilder] 的 builder 里**实时**算。
+      // 它们依赖 `motion.lift` 和 `motion.x` ——
+      // 而 `motion` 的变化只会重建 builder，不会重建外层 build，
+      // 放在外层算出来的就是「静止态的快照」，
+      // 抬起后判定结果完全不对（图标永远不让位，双影就是这么来的）。
+      double uncoverAmount(int index, double lift, double lensCx) {
+        if (lift <= 0.02) return 1;
+        final double lensSize = iconBox + (m.lensSize - iconBox) * lift;
+        final double lensRadius = lensSize / 2;
+        // 珠子中心比图标槽中心高出的量（抬起时会顶出胶囊上沿）。
+        final double lensRise = (lensSize - iconBox) / 2;
+        final double lensCy = stackTop + iconBox / 2 - lensRise;
+        final double dx = (centers[index] - lensCx).abs();
+        final double dy = (stackTop + iconBox / 2 - lensCy).abs();
+        final double dist = math.sqrt(dx * dx + dy * dy);
+        // 珠子的边缘带：珠子边缘再往外半个图标宽之内，
+        // 图标就算「和珠子有重叠」。
+        //
+        // 有重叠就**完全让位**（透明度 0）——
+        // 玻璃珠里那份放大的折射像就是它的替身，
+        // 留一点残影就会变成「双影」；
+        // 只有彻底分开之后才按距离渐变回来。
+        final double touch = lensRadius + iconSize / 2;
+        if (dist <= touch) return 0;
+        final double t = (dist - touch) / iconSize;
+        return t.clamp(0.0, 1.0);
+      }
+
       return SizedBox(
         height: height,
         child: Stack(
           children: <Widget>[
-            // ---- 水滴透镜 ----
+            // ---- 柔边光晕（静止态底盘）----
             //
-            // 位置由运动模型给出（飞行中会连续变化），
-            // 形状由 stretch 给出（飞行中纵向拉长、落位时压扁）。
+            // 参考图（静止态）里选中项后面是一团**边缘完全化开**的
+            // 彩色光晕，不是硬边实色块 —— 形状靠模糊前的路径定义，
+            // 边缘靠高斯模糊化开。
             //
-            // 垂直位置与标签行对齐：透镜罩住的是**图标槽**，
-            // 标签在它下面 —— 这正是 iOS 的形态。
-            Positioned(
-              left: motion.x - dropWidth / 2,
-              top: stackTop,
-              width: dropWidth,
-              height: dropHeight,
-              child: AnimatedBuilder(
-                animation: motion,
-                builder: (BuildContext context, Widget? child) {
-                  return LiquidGlassDrop(
-                    width: dropWidth,
-                    height: dropHeight,
-                    stretch: motion.stretch,
-                    lift: motion.lift,
-                    child: child!,
-                  );
-                },
-                // 水滴下面画的是「当前指着的那个 tab」的内容，
-                // 这样飞行途中玻璃里透出的图标也跟着换。
-                child: _DropContent(
-                  section: tabs[motion.index.clamp(0, tabs.length - 1)],
-                  iconSize: iconSize,
+            // 它跟着水滴横向移动，抬起时**淡出** ——
+            // iOS 27 的原话是
+            // *"it grows, its platter fades so it becomes clear glass"*：
+            // 底盘让位给透镜。
+            //
+            // 注意结构：`Positioned` 必须直接挂在 `Stack` 下，
+            // 所以淡出用的 `Opacity` 放在**里面**，
+            // 外面再套一层 `Stack` 承载随动定位。
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: motion,
+                  builder: (BuildContext context, Widget? child) {
+                    final double glow = 1.0 - motion.lift.clamp(0.0, 1.0);
+                    if (glow <= 0.01) return const SizedBox.shrink();
+                    return Stack(
+                      children: <Widget>[
+                        Positioned(
+                          left: motion.x - m.glowWidth / 2,
+                          top: stackTop + iconBox / 2 - m.glowHeight / 2,
+                          width: m.glowWidth,
+                          height: m.glowHeight,
+                          child: Opacity(
+                            opacity: glow,
+                            child: const SelectedGlow(),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -1303,8 +1437,13 @@ class _CapsuleContentState extends State<_CapsuleContent>
                   final double glow =
                       (_press.progress).clamp(0.0, 1.0);
                   if (glow <= 0.01) return const SizedBox.shrink();
+                  // `_touchPoint` 可能在 build 之后、动画回调之前
+                  // 被 `_handleUp()` 置空（手指抬起后按压动画还在收尾），
+                  // 所以这里必须空安全读取，不能用 `!`。
+                  final Offset? center = _touchPoint;
+                  if (center == null) return const SizedBox.shrink();
                   return _TouchGlow(
-                    center: _touchPoint!,
+                    center: center,
                     progress: glow,
                   );
                 },
@@ -1325,71 +1464,105 @@ class _CapsuleContentState extends State<_CapsuleContent>
               children: List<Widget>.generate(tabs.length, (i) {
                 final section = tabs[i];
                 final bool selected = section == widget.active;
-                return SizedBox(
-                  width: itemWidth,
-                  height: height,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTapDown: (TapDownDetails details) =>
-                        _handleDown(i, details.localPosition),
-                    onTapUp: (TapUpDetails details) => _handleUp(),
-                    onTapCancel: () => _handleUp(),
-                    onTap: () => widget.onSelect(section),
-                    child: Stack(
-                      children: <Widget>[
-                        // 图标：垂直位置跟着上面的 stackTop 走，
-                        // 保证图标正好落在水滴（透镜）中心。
-                        Positioned(
-                          top: stackTop,
-                          left: 0,
-                          right: 0,
-                          height: dropHeight,
-                          child: Center(
-                            child: AnimatedBuilder(
-                              animation: _press.controller,
-                              builder: (BuildContext context, Widget? child) {
-                                // 只有被按下的那个 tab 才回缩。
-                                final bool pressed = _pressedIndex == i;
-                                final double t = pressed
-                                    ? _press.progress.clamp(0.0, 1.0)
-                                    : 0.0;
-                                // 按下时缩到 0.88 —— 幅度要够明显，
-                                // 但不能缩到「点错了」的量级。
-                                final double scale = 1.0 - 0.12 * t;
-                                return Transform.scale(
-                                  scale: scale,
-                                  child: child,
-                                );
-                              },
-                              child: Icon(
-                                selected ? section.selectedIcon : section.icon,
-                                size: iconSize,
-                                color: selected ? AppColors.pink : sub,
-                              ),
-                            ),
-                          ),
-                        ),
-                        // 文字标签：紧贴在图标槽下方。
-                        if (!compact)
+                return AnimatedBuilder(
+                  animation: motion,
+                  builder: (BuildContext context, Widget? child) {
+                    // 抬起态：被玻璃珠罩住的图标要让位 ——
+                    // 珠子里那份放大的折射像就是它的替身。
+                    // 不让位的话两者叠在一起就是「双影」。
+                    //
+                    // 判定按**几何**算（谁被罩住谁让位），
+                    // 不按下标：珠子跟着手指走，未必压在任何一格上。
+                    //
+                    // 这里必须读**实时**的 lift / x ——
+                    // 抬起过程只重建 builder，不重建外层 build，
+                    // 用外层快照会让判定永远停留在静止态。
+                    final double liveLift =
+                        motion.lift.clamp(0.0, 1.0);
+                    final double clear =
+                        uncoverAmount(i, liveLift, motion.x);
+                    // 不能用 `SizedBox.shrink()` 把这一格整个撤掉 ——
+                    // 它是 `Row` 的直接子项，撤掉之后宽度归零，
+                    // 后面所有 tab 都会**往左挤**，整条底栏的排布就塌了
+                    // （表现是第二个 tab 的图标跑到第一个 tab 上面）。
+                    //
+                    // 正确做法：格子照旧占位（`SizedBox` 在外面），
+                    // 只把里面的**内容**调成透明。
+                    return Opacity(
+                      opacity: clear.clamp(0.0, 1.0),
+                      child: child,
+                    );
+                  },
+                  child: SizedBox(
+                    width: itemWidth,
+                    height: height,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (TapDownDetails details) =>
+                          _handleDown(i, details.localPosition),
+                      onTapUp: (TapUpDetails details) => _handleUp(),
+                      onTapCancel: () => _handleUp(),
+                      onTap: () => widget.onSelect(section),
+                      child: Stack(
+                        children: <Widget>[
+                          // 图标：垂直位置跟着上面的 stackTop 走，
+                          // 保证图标正好落在水滴（透镜）中心。
                           Positioned(
-                            top: stackTop + dropHeight + _dockLabelGap,
+                            top: stackTop,
                             left: 0,
                             right: 0,
-                            child: Text(
-                              section.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: AppFontSize.micro,
-                                height: 1.1,
-                                fontWeight:
-                                    selected ? FontWeight.w800 : FontWeight.w500,
-                                color: selected ? AppColors.pink : sub,
+                            height: iconBox,
+                            child: Center(
+                              child: AnimatedBuilder(
+                                animation: _press.controller,
+                                builder:
+                                    (BuildContext context, Widget? child) {
+                                  // 只有被按下的那个 tab 才回缩。
+                                  final bool pressed = _pressedIndex == i;
+                                  final double t = pressed
+                                      ? _press.progress.clamp(0.0, 1.0)
+                                      : 0.0;
+                                  // 按下时缩到 0.88 —— 幅度要够明显，
+                                  // 但不能缩到「点错了」的量级。
+                                  final double scale = 1.0 - 0.12 * t;
+                                  return Transform.scale(
+                                    scale: scale,
+                                    child: child,
+                                  );
+                                },
+                                child: Icon(
+                                  selected
+                                      ? section.selectedIcon
+                                      : section.icon,
+                                  size: iconSize,
+                                  color: selected ? AppColors.pink : sub,
+                                ),
                               ),
                             ),
                           ),
-                      ],
+                          // 文字标签：紧贴在图标槽下方。
+                          if (!compact)
+                            Positioned(
+                              top: stackTop + iconBox + _dockLabelGap,
+                              left: 0,
+                              right: 0,
+                              child: Text(
+                                section.label,
+                                key: LiquidGlassDock.dropLabelKey(i),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: AppFontSize.micro,
+                                  height: 1.1,
+                                  fontWeight:
+                                      selected ? FontWeight.w800 : FontWeight.w500,
+                                  color: selected ? AppColors.pink : sub,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -1399,6 +1572,180 @@ class _CapsuleContentState extends State<_CapsuleContent>
         ),
       );
     });
+  }
+}
+
+/// 抬起态的**大号玻璃透镜**（画在胶囊裁剪层之外）。
+///
+/// 参考图（抬起态）里那枚透镜是一颗**圆形的玻璃珠**：
+///
+/// * 直径约为图标槽的 **1.75 倍**，明显盖过相邻的图标；
+/// * **顶出胶囊上沿**，浮在整条底栏之上；
+/// * 内部内容被**放大**（折射），并带**彩虹色散**。
+///
+/// 关键实现约束：**这一层不能放在胶囊的 `ClipPath` 里面**。
+/// 放进裁剪层，透镜就永远顶不出胶囊上沿 —— 那正是上一版
+/// 「水滴只在栏内滑动」观感的根源。
+///
+/// 所以它的父级是**画布 Stack**（`Clip.none`），而不是胶囊内容。
+class _LensOverlay extends StatelessWidget {
+  const _LensOverlay({
+    required this.motion,
+    required this.tabs,
+    required this.metrics,
+    required this.capsuleRect,
+    required this.accent,
+  });
+
+  /// 水滴运动模型。
+  final GlassDropMotion motion;
+
+  /// 标签组（透镜罩住的是「当前指着的那个 tab」）。
+  final List<AppSection> tabs;
+
+  /// 统一度量。
+  final _DockMetrics metrics;
+
+  /// 胶囊在画布坐标系里的矩形。
+  ///
+  /// 透镜要按胶囊的横坐标定位，而运动模型给的是**胶囊内的局部坐标**，
+  /// 所以这里要把局部坐标换算到画布坐标。
+  final Rect capsuleRect;
+
+  /// 透镜的着色。
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    if (tabs.isEmpty) return const SizedBox.shrink();
+
+    return AnimatedBuilder(
+      animation: motion,
+      builder: (BuildContext context, Widget? child) {
+        final double lift = motion.lift.clamp(0.0, 1.0);
+        // 完全落下时透镜不存在 —— 让位给静止态的柔边光晕。
+        if (lift <= 0.02) return const SizedBox.shrink();
+
+        // 透镜尺寸：抬起时从图标槽长到 lensSize。
+        final double iconBox = metrics.iconBox;
+        final double size = iconBox + (metrics.lensSize - iconBox) * lift;
+
+        // 横向：运动模型给的是胶囊内局部坐标，换算到画布坐标。
+        final double centerX = capsuleRect.left + motion.x;
+
+        // 纵向：透镜罩住的是图标槽，但抬起时会**向上顶出胶囊上沿**。
+        //
+        // 顶点越过胶囊顶边的量 ≈ (size - iconBox) / 2，
+        // 正好等于「透镜比图标槽大出来的那一半」。
+        final double iconCenterY =
+            capsuleRect.top + metrics.stackTop + iconBox / 2;
+        final double centerY = iconCenterY - (size - iconBox) / 2;
+
+        // 透镜里的内容跟着**手指最近的那个 tab**换。
+        // 用 contentIndex 而不是 index：擦洗时 index 还是上一次的落位目标，
+        // 手指已经滑到隔壁了 —— 玻璃珠里却还显示着上一个图标。
+        final AppSection section =
+            tabs[motion.contentIndex.clamp(0, tabs.length - 1)];
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Positioned(
+              left: centerX - size / 2,
+              top: centerY - size / 2,
+              width: size,
+              height: size,
+              child: LiquidGlassDrop(
+                width: size,
+                height: size,
+                // 飞行途中纵向拉长、临近落位时压扁。
+                stretch: motion.stretch,
+                lift: lift,
+                // 色散强度随抬起程度增长：落下时没有彩虹。
+                chromatic: lift,
+                // 折射放大：透镜越大，里面的内容被放得越大。
+                magnification: motion.lensMagnification,
+                tint: accent,
+                // 抬起态是一颗**圆珠**，不是胶囊。
+                shape: GlassShape.circle,
+                // 透镜罩住的是「图标 + 文字」整组 ——
+                // 参考图（抬起态）里被罩住的图标与标签
+                // 一起被透镜放大并折射出彩边。
+                child: _LensContent(
+                  section: section,
+                  iconSize: metrics.iconSize,
+                  showLabel: !metrics.compact,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 透镜内部的内容：**图标 + 文字**整组。
+///
+/// 参考图（抬起态）里被玻璃珠罩住的图标与标签
+/// 一起被放大并折射出彩边 —— 文字的下缘还会被透镜边界切掉一截。
+///
+/// 这一份内容只是**折射像**，不是可交互元素，
+/// 所以用 [ExcludeSemantics] 把它从无障碍树里摘掉
+/// （否则读屏会把同一个标签念两遍）。
+class _LensContent extends StatelessWidget {
+  const _LensContent({
+    required this.section,
+    required this.iconSize,
+    required this.showLabel,
+  });
+
+  final AppSection section;
+  final double iconSize;
+
+  /// 是否显示文字标签（compact 模式下不显示）。
+  final bool showLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      // 用 [Center] 而不是撑满的 Column：
+      // Column 的宽度只等于最宽子项（22.8pt 的图标），
+      // 而外层 Stack 的默认对齐是 `topStart` ——
+      // 不套 Center 的话整组内容会贴在透镜左上角，
+      // 再被 `Transform.scale` 放大，偏移量也跟着放大，
+      // 结果就是「图标歪在珠子边上、只露出半截」。
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Icon(
+              section.selectedIcon,
+              size: iconSize,
+              color: AppColors.pink,
+            ),
+            if (showLabel)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  section.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: AppFontSize.micro,
+                    height: 1.1,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.pink,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1476,44 +1823,6 @@ class _TouchGlowPainter extends CustomPainter {
       oldDelegate.center != center ||
       oldDelegate.radius != radius ||
       oldDelegate.opacity != opacity;
-}
-
-/// 水滴玻璃底下透出的那一组「图标 + 文字」。
-/// 放大由 [LiquidGlassDrop] 内部的 `Transform.scale` 负责，
-/// 这里只管把内容按正常尺寸摆好。
-///
-/// 这一份内容是**玻璃里的折射像**，不是独立的可交互元素 ——
-/// 真正的按钮在下面的标签行里。所以：
-///
-/// * 用 [ExcludeSemantics] 把它从无障碍树里摘掉，
-///   否则读屏会把这个标签念两遍（标签行一次，玻璃里的像一次）；
-/// * 用 [_DropContent.labelKey] 标记它，好让测试能精确定位
-///   **标签行**里的那个同名 Text（两者文字相同，但职责不同）。
-class _DropContent extends StatelessWidget {
-  const _DropContent({
-    required this.section,
-    required this.iconSize,
-  });
-
-  /// 玻璃里那一份标签的 key。
-  ///
-  /// 公开出来是为了让测试能区分「标签行里的标签」和「玻璃里的折射像」——
-  /// 两者文字一模一样，但只有前者是可交互的。
-  static const Key labelKey = Key('glass-drop-label');
-
-  final AppSection section;
-  final double iconSize;
-
-  @override
-  Widget build(BuildContext context) {
-    return ExcludeSemantics(
-      child: Icon(
-        section.selectedIcon,
-        size: iconSize,
-        color: AppColors.pink,
-      ),
-    );
-  }
 }
 
 /// 选中项的液态透镜：粉色渐变 + 外发光 + 内侧折射高光。

@@ -118,13 +118,24 @@ void main() {
   });
 
   group('GlassDropMotion 抬起', () {
-    test('抬起时玻璃下的内容被放大', () {
+    test('抬起时玻璃下的内容被折射放大', () {
       final GlassDropMotion m = build();
       m.jumpTo(0);
-      expect(m.underGlassScale, closeTo(1.0, 0.001));
+      expect(m.lensMagnification, closeTo(1.0, 0.001));
 
       m.setLiftForTest(1.0);
-      expect(m.underGlassScale, greaterThan(1.1), reason: '玻璃下的图标应当被折射放大');
+      expect(m.lensMagnification, closeTo(1.30, 0.001),
+          reason: '玻璃下的图标应当被折射放大');
+    });
+
+    test('擦洗时透镜内容跟随手指最近的 tab', () {
+      final GlassDropMotion m = build();
+      m.jumpTo(0);
+      expect(m.contentIndex, 0);
+
+      // 手指滑到第三个 tab 上，透镜里的内容要跟着换。
+      m.scrubTo(230);
+      expect(m.contentIndex, 2);
     });
   });
 }

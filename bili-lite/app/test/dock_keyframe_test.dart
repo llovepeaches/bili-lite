@@ -20,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 多次会**死锁**（Skia 的 raster 线程等一个已经被消费的 future）。
 /// 所以这里把每一帧拆成**独立的 testWidgets**，每个用例只栅格化一次。
 ///
-/// 产出的图在仓库的 `docs/preview/` 下，命名 `99-r20-keyframe-*.png`。
+/// 产出的图在仓库的 `docs/preview/` 下，命名 `101-r21-keyframe-*.png`。
 void main() {
   final List<AppSection> tabs = <AppSection>[
     AppSection.home,
@@ -35,16 +35,27 @@ void main() {
         onSelect: (AppSection _) {},
       );
 
-  Widget wrap(Widget child, {double width = 360}) {
+  Widget wrap(
+    Widget child, {
+    double width = 360,
+    Brightness brightness = Brightness.light,
+  }) {
     return MaterialApp(
-      theme: ThemeData(brightness: Brightness.light),
+      theme: ThemeData(brightness: brightness),
       home: Scaffold(
         body: Column(
           children: <Widget>[
             const Expanded(child: SizedBox.shrink()),
             RepaintBoundary(
               key: const Key('dock-capture'),
-              child: SizedBox(width: width, height: 96, child: child),
+              // 高度要给足：抬起态的玻璃珠会**顶出胶囊上沿**，
+              // 捕获区域太矮的话珠顶会被裁掉，看不出完整形态。
+              // 底栏靠下对齐，把上方空间留给那颗珠子。
+              child: SizedBox(
+                width: width,
+                height: 150,
+                child: Align(alignment: Alignment.bottomCenter, child: child),
+              ),
             ),
           ],
         ),
@@ -73,7 +84,9 @@ void main() {
           await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
       if (data == null) return;
-      final File file = File('docs/preview/$name.png');
+      // 输出到仓库根的 `docs/preview/`（与历史各轮预览图同目录）。
+      // flutter test 的工作目录是 `app/`，所以这里要往上一级走。
+      final File file = File('../docs/preview/$name.png');
       file.parent.createSync(recursive: true);
       file.writeAsBytesSync(data.buffer.asUint8List());
     });
@@ -96,7 +109,7 @@ void main() {
 
     await dump(
       tester,
-      step == 0 ? '99-r20-keyframe-rest' : '99-r20-keyframe-$step',
+      step == 0 ? '101-r21-keyframe-rest' : '101-r21-keyframe-$step',
     );
   }
 
@@ -125,6 +138,9 @@ void main() {
   });
 
   /// 拖动擦洗的关键帧：按住底栏横向拖动，水滴应当**跟手**移动。
+  ///
+  /// 擦洗途中那颗**大号玻璃透镜**是抬起态的产物：
+  /// 它顶出胶囊上沿、罩住相邻图标、边缘带彩虹色散。
   Future<void> captureScrub(WidgetTester tester, int step) async {
     await tester.pumpWidget(wrap(dockFor(AppSection.home)));
     await tester.pump(const Duration(milliseconds: 600));
@@ -141,7 +157,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
     }
 
-    await dump(tester, '100-r20-scrub-$step');
+    await dump(tester, '102-r21-scrub-$step');
 
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 800));
@@ -157,5 +173,59 @@ void main() {
 
   testWidgets('擦洗关键帧 5：拖到第三个 tab', (WidgetTester tester) async {
     await captureScrub(tester, 5);
+  });
+
+  /// 抬起态的**静态验收图**：按住底栏不动，等弹簧收敛后截图。
+  ///
+  /// 单独出图而不是复用擦洗帧 ——
+  /// 擦洗帧里珠子停在两格之间，是「运动中」的样子；
+  /// 验收要看的是「按住某个 tab 不动」时的完整形态。
+  Future<void> captureLift(
+    WidgetTester tester,
+    String name, {
+    Brightness brightness = Brightness.light,
+    double width = 360,
+  }) async {
+    await tester.pumpWidget(wrap(
+      dockFor(AppSection.home),
+      width: width,
+      brightness: brightness,
+    ));
+    for (int i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    // 透镜在「按住并横向拖动超过阈值」时才抬起
+    // （单纯按住不动只是按压态辉光，不会升起玻璃珠）。
+    // 这里拖过阈值后**保持手指不松开**，等弹簧收敛到 1.0 再截图。
+    final TestGesture gesture = await tester.startGesture(
+      tester.getTopLeft(find.byType(LiquidGlassDock)) + const Offset(60, 48),
+    );
+    await gesture.moveBy(const Offset(24, 0));
+    // 逐帧推进，让抬起弹簧真正收敛到 1.0。
+    for (int i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    await dump(tester, name);
+
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 800));
+  }
+
+  testWidgets('验收图 1：浅色抬起态', (WidgetTester tester) async {
+    await captureLift(tester, '103-r21-lift-light');
+  });
+
+  testWidgets('验收图 2：深色抬起态', (WidgetTester tester) async {
+    await captureLift(
+      tester,
+      '104-r21-lift-dark',
+      brightness: Brightness.dark,
+    );
+  });
+
+  testWidgets('验收图 3：窄屏（340pt）抬起态', (WidgetTester tester) async {
+    await captureLift(tester, '105-r21-lift-narrow', width: 340);
   });
 }

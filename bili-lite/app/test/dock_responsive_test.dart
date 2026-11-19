@@ -10,7 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. **统一度量** —— 图标槽、水滴玻璃珠、标签行改为同一套尺寸派生；
 /// 2. **窄屏保护** —— 右侧圆形按钮可以被压缩，保证标签组每个 tab
 ///    至少分到 44pt；
-/// 3. **折射放大预算** —— 玻璃珠内部的 1.14× 放大必须留在胶囊内。
+/// 3. **折射放大预算** —— 抬起态的玻璃珠会**顶出胶囊上沿**，
+///    标签行那份图标不受影响，缩放只作用在玻璃珠内部。
 ///
 /// 这里不测整个 `ShellPage`（它依赖全局 `prefs`），
 /// 而是直接测底栏自身在各种宽度下的几何。
@@ -60,8 +61,9 @@ void main() {
 
   /// 每个 tab 的图标（标签行那一份，不含玻璃珠里的折射像）。
   ///
-  /// 玻璃珠里的折射像被 `Transform.scale(1.14)` 放大过，
+  /// 玻璃珠里的折射像被 `Transform.scale` 放大过，
   /// 所以它比标签行那份**更大** —— 取宽度较小的那一份。
+  /// 静止态没有玻璃珠，两份尺寸相同，取哪一个都一样。
   List<Rect> labelIcons(WidgetTester tester, IconData icon) {
     final List<Rect> all = tester
         .widgetList<Icon>(find.byIcon(icon))
@@ -130,8 +132,9 @@ void main() {
     }
   });
 
-  testWidgets('玻璃珠的折射放大像不越出底栏', (WidgetTester tester) async {
-    // 折射像会被放大 1.14 倍，放大后必须还在底栏里。
+  testWidgets('标签行的图标不越出底栏', (WidgetTester tester) async {
+    // 静止态没有玻璃珠，标签行那份图标必须老老实实待在底栏里。
+    // （抬起态的玻璃珠是**故意**顶出胶囊上沿的，那是另一回事。）
     for (final double width in <double>[320, 375, 414, 768]) {
       await tester.pumpWidget(build(width: width));
       await tester.pump();
@@ -143,12 +146,12 @@ void main() {
         expect(
           dockRect.top,
           lessThanOrEqualTo(r.top + 0.5),
-          reason: '宽度 $width 下折射像越出了底栏顶部：${r.top} vs ${dockRect.top}',
+          reason: '宽度 $width 下标签行图标越出了底栏顶部：${r.top} vs ${dockRect.top}',
         );
         expect(
           dockRect.bottom,
           greaterThanOrEqualTo(r.bottom - 0.5),
-          reason: '宽度 $width 下折射像越出了底栏底部：${r.bottom} vs ${dockRect.bottom}',
+          reason: '宽度 $width 下标签行图标越出了底栏底部：${r.bottom} vs ${dockRect.bottom}',
         );
       }
     }
